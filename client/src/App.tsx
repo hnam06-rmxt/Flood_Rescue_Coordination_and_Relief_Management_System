@@ -1,23 +1,78 @@
-function App() {
-  return (
-    <main className="min-h-screen bg-slate-950 text-slate-100">
-      <section className="mx-auto flex min-h-screen max-w-5xl items-center px-6 py-16">
-        <div className="space-y-6">
-          <span className="inline-flex rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 text-sm font-medium text-cyan-300">
-            Flood Rescue System
-          </span>
-          <div className="space-y-3">
-            <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
-              Client React + Tailwind + TypeScript
-            </h1>
-            <p className="max-w-2xl text-base text-slate-300 sm:text-lg">
-              Lê Phú
-            </p>
-          </div>
-        </div>
-      </section>
-    </main>
-  );
+import { type ReactElement, useEffect } from "react";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { useAuthStore } from "./hooks/useAuthStore";
+import { LoginPage } from "./pages/LoginPage";
+import { RegisterPage } from "./pages/RegisterPage";
+import { WorkspacePage } from "./pages/WorkspacePage";
+import { rescueRequestActions } from "./store/rescueRequestStore";
+import { userActions } from "./store/userStore";
+
+function PublicOnlyRoute({ children }: { children: ReactElement }) {
+  const isAuthenticated = useAuthStore((state) => state.accessToken.length > 0);
+  const location = useLocation();
+
+  if (isAuthenticated) {
+    return <Navigate replace state={{ from: location }} to="/workspace" />;
+  }
+
+  return children;
 }
 
-export default App;
+function ProtectedRoute({ children }: { children: ReactElement }) {
+  const isAuthenticated = useAuthStore((state) => state.accessToken.length > 0);
+  const location = useLocation();
+
+  if (!isAuthenticated) {
+    return <Navigate replace state={{ from: location }} to="/login" />;
+  }
+
+  return children;
+}
+
+export default function App() {
+  const isAuthenticated = useAuthStore((state) => state.accessToken.length > 0);
+
+  useEffect(() => {
+    rescueRequestActions.hydrateModuleStatus();
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      userActions.clear();
+      return;
+    }
+
+    void userActions.loadMyProfile().catch(() => undefined);
+  }, [isAuthenticated]);
+
+  return (
+    <Routes>
+      <Route element={<Navigate replace to="/login" />} path="/" />
+      <Route
+        element={
+          <PublicOnlyRoute>
+            <LoginPage />
+          </PublicOnlyRoute>
+        }
+        path="/login"
+      />
+      <Route
+        element={
+          <PublicOnlyRoute>
+            <RegisterPage />
+          </PublicOnlyRoute>
+        }
+        path="/register"
+      />
+      <Route
+        element={
+          <ProtectedRoute>
+            <WorkspacePage />
+          </ProtectedRoute>
+        }
+        path="/workspace"
+      />
+      <Route element={<Navigate replace to={isAuthenticated ? "/workspace" : "/login"} />} path="*" />
+    </Routes>
+  );
+}

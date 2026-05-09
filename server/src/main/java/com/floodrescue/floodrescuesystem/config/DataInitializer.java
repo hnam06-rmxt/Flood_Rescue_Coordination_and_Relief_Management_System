@@ -17,11 +17,17 @@ public class DataInitializer {
     public CommandLineRunner seedRoles(RoleRepository roleRepository, UserRepository userRepository, PasswordEncoder passwordEncoder) {
         return args -> {
             createRoleIfMissing(roleRepository, "ADMIN", "System administrator");
+            createRoleIfMissing(roleRepository, "COORDINATOR", "Rescue coordinator - dispatches teams");
+            createRoleIfMissing(roleRepository, "MANAGER", "Resource manager - vehicles and relief supplies");
             createRoleIfMissing(roleRepository, "RESCUER", "Rescue team member");
             createRoleIfMissing(roleRepository, "CITIZEN", "Citizen using the platform");
             
-            // Create default user
-            createDefaultUserIfMissing(userRepository, roleRepository, passwordEncoder);
+            // Create default admin user
+            createDefaultUserIfMissing(userRepository, roleRepository, passwordEncoder,
+                    "admin", "Administrator", "admin@floodrescue.com", "ADMIN", "admin123");
+            // Create default demo citizen
+            createDefaultUserIfMissing(userRepository, roleRepository, passwordEncoder,
+                    "demo", "Demo User", "demo@example.com", "CITIZEN", "demo123");
         };
     }
 
@@ -34,24 +40,25 @@ public class DataInitializer {
         }
     }
 
-    private void createDefaultUserIfMissing(UserRepository userRepository, RoleRepository roleRepository, PasswordEncoder passwordEncoder) {
-        if (userRepository.findByUsername("demo").isEmpty()) {
+    private void createDefaultUserIfMissing(UserRepository userRepository, RoleRepository roleRepository,
+                                            PasswordEncoder passwordEncoder,
+                                            String username, String fullName, String email,
+                                            String roleName, String password) {
+        if (userRepository.findByUsername(username).isEmpty()) {
             User user = new User();
-            user.setUsername("demo");
-            user.setFullName("Demo User");
-            user.setEmail("demo@example.com");
+            user.setUsername(username);
+            user.setFullName(fullName);
+            user.setEmail(email);
             user.setPhone("0123456789");
-            user.setAddress("123 Demo Street");
-            user.setPasswordHash(passwordEncoder.encode("demo123"));
+            user.setPasswordHash(passwordEncoder.encode(password));
             user.setStatus("ACTIVE");
             user.setCreatedAt(LocalDateTime.now());
             
-            Role citizenRole = roleRepository.findByName("CITIZEN")
-                    .orElseThrow(() -> new RuntimeException("CITIZEN role not found"));
-            user.setRole(citizenRole);
+            Role role = roleRepository.findByName(roleName)
+                    .orElseThrow(() -> new RuntimeException(roleName + " role not found"));
+            user.setRole(role);
             
             userRepository.save(user);
         }
     }
 }
-

@@ -541,7 +541,7 @@ export function RescueRequestsPage() {
       {/* Detailed View Modal */}
       {selectedRequestDetails && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="card w-full max-w-2xl p-6 animate-fade-in bg-white dark:bg-zinc-900 border border-hairline shadow-xl max-h-[90vh] overflow-y-auto space-y-6">
+          <div className="card w-full max-w-2xl p-6 animate-fade-in !bg-canvas !text-ink border border-hairline shadow-xl max-h-[90vh] overflow-y-auto space-y-6">
             <div className="flex items-center justify-between border-b border-hairline pb-4">
               <div>
                 <h3 className="text-lg font-bold text-ink">Yêu cầu cứu hộ #{selectedRequestDetails.requestId}</h3>

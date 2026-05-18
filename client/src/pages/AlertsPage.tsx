@@ -129,7 +129,7 @@ export function AlertsPage() {
               <input className="input-field" placeholder="Huyện Quảng Điền, Huyện Phú Vang..." value={form.locationArea} onChange={e => setForm({ ...form, locationArea: e.target.value })} required />
             </div>
             <div className="md:col-span-2 flex gap-2 pt-2">
-              <button type="submit" className="btn-danger flex items-center gap-1.5">
+              <button type="submit" className="btn-primary !bg-error hover:!bg-error/90 flex items-center gap-1.5">
                 <AlertTriangle size={14} /> Phát cảnh báo khẩn
               </button>
               <button type="button" onClick={() => setShowForm(false)} className="btn-secondary">Hủy</button>

@@ -428,7 +428,142 @@ GEORADIUS geo:rescue_teams 108.2345 15.8234 15 km WITHDIST WITHCOORD ASC LIMIT 5
 
 ---
 
-## 3. Cấu Trúc Thư Mục & Mã Nguồn (Codebase Structure)
+## 3. Sơ Đồ Lớp Dữ Liệu (Class Diagram - Code Layer)
+
+Dưới đây là sơ đồ lớp chi tiết của hệ thống thể hiện cấu trúc mã nguồn Java (Entities) và TypeScript (Types) cùng các mối quan hệ thành phần.
+
+```mermaid
+classDiagram
+    class User {
+        +Long id
+        +String username
+        +String passwordHash
+        +String fullName
+        +String email
+        +String phone
+        +String address
+        +String avatarUrl
+        +String status
+        +LocalDateTime lastLoginAt
+        +LocalDateTime createdAt
+    }
+
+    class Role {
+        +Long id
+        +String name
+        +String description
+    }
+
+    class RefreshToken {
+        +Long id
+        +String token
+        +LocalDateTime expiresAt
+        +Boolean revoked
+    }
+
+    class RescueTeam {
+        +Long teamId
+        +String teamName
+        +String description
+        +Long teamLeaderId
+        +Integer memberCount
+        +TeamStatus status
+        +String contactPhone
+        +String currentLocation
+        +Double latitude
+        +Double longitude
+    }
+
+    class RescueVehicle {
+        +Long id
+        +String name
+        +String type
+        +String license_plate
+        +Integer capacity
+        +String currentLocation
+        +VehicleStatus status
+        +String notes
+    }
+
+    class RescueRequest {
+        +Long requestId
+        +String description
+        +String location
+        +Double latitude
+        +Double longitude
+        +String image
+        +Integer numberOfPeople
+        +UrgencyLevel urgencyLevel
+        +RequestStatus status
+        +String notes
+        +LocalDateTime createdTime
+    }
+
+    class ReliefItem {
+        +Long id
+        +String name
+        +String category
+        +String unit
+        +Integer quantityInStock
+        +Integer minimumStockLevel
+        +String description
+    }
+
+    class ReliefDistribution {
+        +Long id
+        +Integer quantity
+        +String recipientName
+        +String recipientLocation
+        +String notes
+        +LocalDateTime distributedAt
+    }
+
+    class Shelter {
+        +Long id
+        +String name
+        +String location
+        +Double latitude
+        +Double longitude
+        +Integer capacity
+        +Integer currentOccupancy
+        +String status
+        +String contactInfo
+    }
+
+    class FloodAlert {
+        +Long id
+        +String title
+        +String description
+        +String severity
+        +String locationArea
+        +LocalDateTime startTime
+        +LocalDateTime endTime
+    }
+
+    class Notification {
+        +Long id
+        +String title
+        +String message
+        +String type
+        +Long referenceId
+        +Boolean isRead
+    }
+
+    User "n" --> "1" Role : belongsTo
+    RefreshToken "n" --> "1" User : belongsTo
+    RescueRequest "n" --> "1" User : createdBy
+    RescueRequest "n" --> "0..1" RescueTeam : assignedTo
+    RescueVehicle "n" --> "0..1" RescueTeam : assignedTo
+    ReliefDistribution "n" --> "1" ReliefItem : distributes
+    ReliefDistribution "n" --> "1" User : distributedBy
+    ReliefDistribution "n" --> "0..1" RescueRequest : forRequest
+    FloodAlert "n" --> "1" User : createdBy
+    Notification "n" --> "1" User : sentTo
+```
+
+---
+
+## 4. Cấu Trúc Thư Mục & Mã Nguồn (Codebase Structure)
 
 Dự án tuân thủ cấu trúc phân rã module rõ ràng giữa phía Client (React Single Page Application) và phía Server (Spring Boot Restful API).
 
@@ -487,9 +622,9 @@ flood-rescue-system/
 
 ---
 
-## 4. Đặc Tả RESTful API Đầy Đủ (API Specifications)
+## 5. Đặc Tả RESTful API Đầy Đủ (API Specifications)
 
-### 4.1 Phân Hệ Xác Thực & Quản Trị Phiên (`/api/auth`)
+### 5.1 Phân Hệ Xác Thực & Quản Trị Phiên (`/api/auth`)
 
 | Phương thức | Đường dẫn API | Mô tả nghiệp vụ | Yêu cầu quyền hạn |
 |:---|:---|:---|:---|
@@ -498,7 +633,7 @@ flood-rescue-system/
 | `POST` | `/api/auth/refresh` | Làm mới Access Token đã hết hạn bằng Refresh Token | Công khai (Public) |
 | `POST` | `/api/auth/logout` | Đăng xuất, ghi danh sách đen JWT hiện hành vào Redis | Đã đăng nhập |
 
-### 4.2 Phân Hệ Yêu Cầu Cứu Hộ Khẩn Cấp (`/api/rescue-requests`)
+### 5.2 Phân Hệ Yêu Cầu Cứu Hộ Khẩn Cấp (`/api/rescue-requests`)
 
 | Phương thức | Đường dẫn API | Mô tả nghiệp vụ | Yêu cầu quyền hạn |
 |:---|:---|:---|:---|
@@ -515,7 +650,7 @@ flood-rescue-system/
 | `PATCH` | `/api/rescue-requests/{id}/urgency` | Cập nhật mức độ khẩn cấp (CRITICAL, HIGH...) sau khi xác thực | `COORDINATOR`, `ADMIN` |
 | `DELETE` | `/api/rescue-requests/{id}` | Xóa yêu cầu SOS bị spam hoặc sai lệch | `ADMIN` |
 
-### 4.3 Phân Hệ Đội Cứu Hộ & Phương Tiện Can Tác
+### 5.3 Phân Hệ Đội Cứu Hộ & Phương Tiện Can Tác
 
 | Phương thức | Đường dẫn API | Mô tả nghiệp vụ | Yêu cầu quyền hạn |
 |:---|:---|:---|:---|
@@ -528,7 +663,7 @@ flood-rescue-system/
 | `POST` | `/api/vehicles` | Nhập thêm phương tiện cứu hộ mới | `COORDINATOR`, `ADMIN` |
 | `PATCH` | `/api/vehicles/{id}/assign-team` | Giao xe/xuồng cano cho một đội phản ứng nhanh cụ thể quản lý | `COORDINATOR`, `ADMIN` |
 
-### 4.4 Phân Hệ Trạm Trú Ẩn An Toàn (`/api/shelters`)
+### 5.4 Phân Hệ Trạm Trú Ẩn An Toàn (`/api/shelters`)
 
 | Phương thức | Đường dẫn API | Mô tả nghiệp vụ | Yêu cầu quyền hạn |
 |:---|:---|:---|:---|
@@ -537,7 +672,7 @@ flood-rescue-system/
 | `PUT` | `/api/shelters/{id}` | Cập nhật số người đang lánh nạn thực tế tại trạm | `MANAGER`, `COORDINATOR` |
 | `DELETE` | `/api/shelters/{id}` | Xóa điểm trú ẩn khỏi danh sách bản đồ | `ADMIN` |
 
-### 4.5 Phân Hệ Cứu Trợ Logistics (`/api/relief`)
+### 5.5 Phân Hệ Cứu Trợ Logistics (`/api/relief`)
 
 | Phương thức | Đường dẫn API | Mô tả nghiệp vụ | Yêu cầu quyền hạn |
 |:---|:---|:---|:---|
@@ -548,9 +683,9 @@ flood-rescue-system/
 
 ---
 
-## 5. Cơ Chế Bảo Mật & Phân Quyền (Security & Access Control)
+## 6. Cơ Chế Bảo Mật & Phân Quyền (Security & Access Control)
 
-### 5.1 Kiến Trúc Bộ Lọc Xác Thực JWT (JWT Filter Architecture)
+### 6.1 Kiến Trúc Bộ Lọc Xác Thực JWT (JWT Filter Architecture)
 
 Hệ thống bảo vệ tài nguyên thông qua lá chắn **Spring Security Filter Chain**, xác thực phi trạng thái (Stateless) ở từng yêu cầu HTTP riêng biệt.
 
@@ -587,14 +722,14 @@ sequenceDiagram
     end
 ```
 
-### 5.2 Cơ Chế JWT Token
+### 6.2 Cơ Chế JWT Token
 
 *   **Thuật toán mã hóa chữ ký**: **HS512** (chữ ký bảo mật cao với khóa bí mật tối thiểu 512-bit).
 *   **Thời gian sống của Access Token (Access Token TTL)**: $15$ phút ($900.000$ milliseconds) nhằm hạn chế rủi ro lộ lọt khóa.
 *   **Thời gian sống của Refresh Token (Refresh Token TTL)**: $7$ ngày ($604.800.000$ milliseconds) giúp người dùng giữ trạng thái đăng nhập thuận tiện.
 *   **Danh sách Claims trong Token**: `sub` (Tên đăng nhập), `role` (Quyền hạn), `iat` (Thời điểm phát hành), `exp` (Thời điểm hết hạn).
 
-### 5.3 Ma Trận Phân Quyền Theo Vai Trò (Role-Based Access Control - RBAC Matrix)
+### 6.3 Ma Trận Phân Quyền Theo Vai Trò (Role-Based Access Control - RBAC Matrix)
 
 | Chức năng nghiệp vụ | `ADMIN` | `COORDINATOR` | `MANAGER` | `RESCUER` | `CITIZEN` |
 |:---|:---:|:---:|:---:|:---:|:---:|
@@ -609,7 +744,7 @@ sequenceDiagram
 
 ---
 
-## 6. Chiến Lược Bộ Nhớ Đệm & Đồng Bộ Realtime (Redis Integration)
+## 7. Chiến Lược Bộ Nhớ Đệm & Đồng Bộ Realtime (Redis Integration)
 
 Hệ thống tích hợp Redis để xử lý ba tác vụ cốt lõi có tần suất đọc/ghi cực kỳ lớn: **API Caching**, **Geo Location Tracking** và **Session Blacklist**.
 
@@ -637,7 +772,7 @@ flowchart TD
     Logout_Action["Hành động Logout từ Client"] -->|Cách ly token| Key_Blacklist
 ```
 
-### 6.1 Chính Sách Hủy Bộ Nhớ Đệm Nhất Quán (Cache Eviction Triggers)
+### 7.1 Chính Sách Hủy Bộ Nhớ Đệm Nhất Quán (Cache Eviction Triggers)
 
 Để đảm bảo tính nhất quán cao nhất của dữ liệu khi xảy ra các thao tác ghi (Create / Update / Delete), hệ thống cấu hình các bộ lọc tự động xóa vùng cache tương ứng:
 
@@ -647,9 +782,9 @@ flowchart TD
 
 ---
 
-## 7. Quy Trình Nghiệp Vụ Cốt Lõi (Core Workflows)
+## 8. Quy Trình Nghiệp Vụ Cốt Lõi (Core Workflows)
 
-### 7.1 Luồng Điều Phối Cứu Hộ Thời Gian Thực
+### 8.1 Luồng Điều Phối Cứu Hộ Thời Gian Thực
 
 Quy trình phối hợp khép kín và an toàn giữa Nạn nhân, Sở chỉ huy điều phối và Lực lượng cứu hộ thực địa:
 
@@ -668,6 +803,121 @@ flowchart TD
     Redis_Geo -->|5. Trả kết quả khoảng cách| Coord
 
     Coord -->|"6. Bấm Phân công đội<br/>(PATCH /requests/{id}/assign)"| Sys_Assign["Cập nhật trạng thái yêu cầu<br/>[Status: ASSIGNED]"]
+    Sys_Assign -->|7. Isolate Transaction an toàn| Notif_Team["Thông báo khẩn tới App Đội trưởng"]
+    
+    Notif_Team --> Team
+    Team -->|"8. Bấm tiếp nhận nhiệm vụ"| Sys_InProgress["Cập nhật trạng thái yêu cầu<br/>[Status: IN_PROGRESS]"]
+    Sys_InProgress -->|9. Chia sẻ GPS hành trình| GPS_Track["Dẫn đường Google Maps thực tế<br/>(Origin Đội -> Destination Nạn nhân)"]
+    
+    GPS_Track --> Team
+    Team -->|10. Tiếp cận & di dời an toàn| Sys_Completed["Cập nhật hoàn thành cứu nạn<br/>[Status: COMPLETED]"]
+    Sys_Completed -->|11. Báo cáo hoàn tất| Citizen
+
+    style Citizen fill:#ec4899,stroke:#db2777,stroke-width:2px,color:#fff
+    style Coord fill:#6366f1,stroke:#4f46e5,stroke-width:2px,color:#fff
+    style Team fill:#22c55e,stroke:#16a34a,stroke-width:2px,color:#fff
+    style DB fill:#336791,stroke:#1d4ed8,stroke-width:1px,color:#fff
+    style Redis_Geo fill:#ef4444,stroke:#dc2626,stroke-width:1px,color:#fff
+```
+
+### 8.2 Biểu Đồ Trạng Thái Của Yêu Cầu Cứu Hộ (Rescue Request State Machine)
+
+```mermaid
+stateDiagram-v2
+    [*] --> PENDING : Citizen gửi tín hiệu SOS khẩn cấp
+    PENDING --> ASSIGNED : Sở chỉ huy phân công Đội cứu hộ (Status: ACTIVE)
+    PENDING --> CANCELLED : Citizen tự hủy (rời đi an toàn hoặc bấm nhầm)
+    
+    ASSIGNED --> IN_PROGRESS : Đội trưởng xác nhận tiếp nhận nhiệm vụ thực địa
+    ASSIGNED --> CANCELLED : Hủy ca phân công do phát sinh ngoài ý muốn
+    
+    IN_PROGRESS --> COMPLETED : Đội cứu hộ hoàn thành cứu hộ / phát đủ nhu yếu phẩm
+    IN_PROGRESS --> CANCELLED : Đội gặp sự cố thực địa (hỏng xe, cano hết xăng...)
+    
+    COMPLETED --> [*]
+    CANCELLED --> [*]
+```
+
+---
+
+## 9. Cấu Hình Môi Trường Thực Thi (Deployment & Environments)
+
+### 9.1 Tập Tin Cấu Hình Hạt Nhân (`application.properties`)
+
+```properties
+# 1. Cấu hình Cổng Dịch Vụ
+server.port=8080
+
+# 2. Cấu hình Cơ sở dữ liệu chính PostgreSQL
+spring.datasource.url=jdbc:postgresql://localhost:5432/flood_rescue_db
+spring.datasource.username=postgres
+spring.datasource.password=1234
+spring.datasource.driver-class-name=org.postgresql.Driver
+
+# 3. Cấu hình tầng ORM JPA / Hibernate
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=true
+spring.jpa.properties.hibernate.format_sql=true
+spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.PostgreSQLDialect
+
+# 4. Cấu hình cổng kết nối Redis phân tán
+spring.data.redis.host=localhost
+spring.data.redis.port=6379
+spring.data.redis.password=
+
+# 5. Khóa chữ ký điện tử an toàn JWT (Tối thiểu 64 ký tự chuẩn mã hóa HS512)
+app.jwt.secret=9a76e8d2b3c4f5e6d7c8b9a0123456789abcdef0123456789abcdef0123456789abcde
+# Thời hạn Access Token: 15 phút (900.000 ms)
+app.jwt.access-expiration=900000
+# Thời hạn Refresh Token: 7 ngày (604.800.000 ms)
+app.jwt.refresh-expiration=604800000
+
+# 6. Định mức thời gian sống Cache Hệ thống (Tính bằng Giây)
+app.cache.ttl.dashboard=60
+app.cache.ttl.shelters=300
+app.cache.ttl.flood-alerts=120
+app.cache.ttl.rescue-teams=180
+
+# 7. Tài liệu API Swagger UI
+springdoc.swagger-ui.path=/swagger-ui.html
+springdoc.api-docs.path=/v3/api-docs
+```
+
+### 9.2 Quy Trình Khởi Chạy Hệ Thống Thực Tế
+
+Hệ thống được vận hành nhanh thông qua môi trường dòng lệnh PowerShell trên Windows:
+
+```powershell
+# Bước 1: Khởi động cơ sở dữ liệu PostgreSQL (Cổng mặc định: 5432)
+# Đảm bảo Database 'flood_rescue_db' đã được tạo lập thành công.
+
+# Bước 2: Kích hoạt dịch vụ máy chủ bộ nhớ đệm Redis
+Start-Process "redis\Redis-8.6.3-Windows-x64-msys2\redis-server.exe" -WindowStyle Hidden
+Write-Host "Redis Server đang chạy ngầm tại cổng 6379..." -ForegroundColor Green
+
+# Bước 3: Biên dịch và chạy máy chủ Spring Boot Backend
+cd server
+./mvnw spring-boot:run
+# Backend sẽ khởi chạy và lắng nghe tại cổng http://localhost:8080
+
+# Bước 4: Khởi động máy chủ nhà phát triển Frontend React + Vite
+cd ../client
+npm run dev
+# Frontend sẽ được kích hoạt tại cổng http://localhost:5173
+```
+
+---
+
+## 10. Thống Kê Thư Viện Lõi Sử Dụng (System Dependencies)
+
+| Thư viện | Mục đích sử dụng | Lợi ích tối ưu |
+|:---|:---|:---|
+| `spring-boot-starter-data-jpa` | Quản trị tầng giao tiếp CSDL chính | Tự động hóa ánh xạ ORM, kiểm soát Transaction an toàn |
+| `spring-boot-starter-security` | Thiết lập chốt chặn phân quyền RBAC | Bảo mật tài nguyên hệ thống, chống tấn công tiêm nhiễm |
+| `spring-boot-starter-data-redis` | Bộ nhớ đệm API, cấu trúc GeoSet | Tăng tốc độ truy xuất, giảm thời gian xử lý khoảng cách |
+| `jackson-datatype-jsr310` | Định dạng và Serialization đối tượng Thời gian | Đảm bảo truyền nhận chuỗi thời gian không bị sai lệch múi giờ |
+| `springdoc-openapi` | Tự động sinh tài liệu tài nguyên API | Hỗ trợ lập trình viên Frontend tích hợp và kiểm thử dễ dàng |
+| `jjwt (0.12.6)` | Tạo lập và kiểm chứng chữ ký số JWT | Mã hóa thông tin vai trò gọn nhẹ, không trạng thái trên server |gn["Cập nhật trạng thái yêu cầu<br/>[Status: ASSIGNED]"]
     Sys_Assign -->|7. Isolate Transaction an toàn| Notif_Team["Thông báo khẩn tới App Đội trưởng"]
     
     Notif_Team --> Team

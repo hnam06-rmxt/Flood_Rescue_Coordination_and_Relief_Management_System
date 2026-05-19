@@ -1,8 +1,29 @@
 import { useEffect, useState } from "react";
-import { Plus, Search, MapPin, CheckCircle, ArrowRight, UserPlus, XCircle, Navigation, Radio, HeartHandshake, Eye, UserCheck } from "lucide-react";
+import { Plus, Search, MapPin, CheckCircle, ArrowRight, UserPlus, XCircle, Navigation, Radio, HeartHandshake, Eye, UserCheck, Map } from "lucide-react";
 import { rescueApi, teamApi, uploadApi } from "../services/apiService";
 import { useUserStore } from "../hooks/useUserStore";
 import type { RescueRequest, CreateRescueRequest, RescueTeam } from "../types/rescue";
+
+import { MapContainer, TileLayer, Marker, useMapEvents } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+
+// Fix Leaflet default icon issue
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png",
+  iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png",
+  shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
+});
+
+function LocationPicker({ position, setPosition }: { position: [number, number], setPosition: (pos: [number, number]) => void }) {
+  useMapEvents({
+    click(e) {
+      setPosition([e.latlng.lat, e.latlng.lng]);
+    },
+  });
+  return <Marker position={position} />;
+}
 
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
   const R = 6371; // Bán kính trái đất (km)
@@ -50,6 +71,7 @@ export function RescueRequestsPage() {
   const [teamLocationActive, setTeamLocationActive] = useState(false); // FR-3.3 Auto tracking
   const [loading, setLoading] = useState(true);
   const [selectedRequestDetails, setSelectedRequestDetails] = useState<RescueRequest | null>(null);
+  const [updateLocationModal, setUpdateLocationModal] = useState<{ id: number, lat: number, lng: number } | null>(null);
 
   useEffect(() => { 
     load(); 
@@ -311,17 +333,26 @@ export function RescueRequestsPage() {
                 </div>
               )}
             </div>
-            <div>
-              <label className="block text-sm font-medium text-ink mb-1">Vĩ độ</label>
-              <input type="number" step="any" className="input-field" value={form.latitude} onChange={e => setForm({ ...form, latitude: +e.target.value })} />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-ink mb-1">Kinh độ</label>
-              <div className="flex gap-2">
-                <input type="number" step="any" className="input-field" value={form.longitude} onChange={e => setForm({ ...form, longitude: +e.target.value })} />
-                <button type="button" onClick={handleGetLocation} className="btn-secondary !px-3 shrink-0" title="Lấy vị trí hiện tại (GPS)">
-                  <Navigation size={18} />
-                </button>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-ink mb-1 flex items-center justify-between">
+                <span>Vị trí trên Bản đồ (Click để chọn Vĩ độ/Kinh độ)</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-brand-teal font-semibold font-mono bg-tint-mint px-2 py-0.5 rounded border border-brand-teal/20">
+                    {form.latitude.toFixed(6)}, {form.longitude.toFixed(6)}
+                  </span>
+                  <button type="button" onClick={handleGetLocation} className="btn-secondary !py-0.5 !px-2 text-xs" title="Lấy vị trí hiện tại (GPS)">
+                    <Navigation size={12} className="inline mr-1" /> Định vị GPS
+                  </button>
+                </div>
+              </label>
+              <div className="h-[250px] w-full rounded-md border border-hairline overflow-hidden mt-1 relative z-0">
+                <MapContainer center={[form.latitude || 15.825, form.longitude || 108.236]} zoom={13} className="h-full w-full">
+                  <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                  <LocationPicker 
+                    position={[form.latitude || 15.825, form.longitude || 108.236]} 
+                    setPosition={(pos) => setForm({ ...form, latitude: pos[0], longitude: pos[1] })} 
+                  />
+                </MapContainer>
               </div>
             </div>
             <div className="md:col-span-2 flex gap-2">
@@ -472,9 +503,21 @@ export function RescueRequestsPage() {
                           <XCircle size={14} /> Hủy
                         </button>
                       )}
+                      {isCitizen && ["PENDING", "ASSIGNED"].includes(r.status) && (
+                        <button onClick={() => setUpdateLocationModal({ id: r.requestId, lat: r.latitude || 15.825, lng: r.longitude || 108.236 })} 
+                          className="btn-secondary !py-1 !px-2 text-xs border-brand-purple text-brand-purple hover:bg-tint-lavender flex items-center gap-1">
+                          <Map size={14} /> Sửa vị trí
+                        </button>
+                      )}
                       {/* FR-3.2 Navigation */}
                       {(isStaff || isCitizen) && ["ASSIGNED", "IN_PROGRESS"].includes(req.status) && req.latitude && req.longitude && (
-                        <a href={`https://www.google.com/maps/dir/?api=1&destination=${req.latitude},${req.longitude}`} target="_blank" rel="noreferrer"
+                        <a href={(() => {
+                           const team = teams.find(t => t.teamId === req.assignedTeamId);
+                           if (team && team.latitude && team.longitude) {
+                             return `https://www.google.com/maps/dir/?api=1&origin=${team.latitude},${team.longitude}&destination=${req.latitude},${req.longitude}`;
+                           }
+                           return `https://www.google.com/maps/dir/?api=1&destination=${req.latitude},${req.longitude}`;
+                        })()} target="_blank" rel="noreferrer"
                           className="btn-secondary !py-1 !px-2 text-xs border-link text-link hover:bg-link hover:text-white flex items-center gap-1">
                           <Navigation size={14} /> Dẫn đường
                         </a>
@@ -646,6 +689,46 @@ export function RescueRequestsPage() {
 
             <div className="border-t border-hairline pt-4 flex justify-end">
               <button onClick={() => setSelectedRequestDetails(null)} className="btn-secondary min-w-[100px]">Đóng</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Update Location Modal */}
+      {updateLocationModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="card w-full max-w-xl p-6 animate-fade-in space-y-4">
+            <div className="flex items-center justify-between border-b border-hairline pb-2">
+              <h3 className="text-md font-semibold text-ink flex items-center gap-1.5">
+                <MapPin size={16} className="text-brand-purple" /> Cập nhật vị trí hiện tại
+              </h3>
+              <button type="button" onClick={() => setUpdateLocationModal(null)} className="text-slate hover:text-ink text-sm">Đóng</button>
+            </div>
+            
+            <p className="text-sm text-slate">Vui lòng click lên bản đồ để chọn lại vị trí chính xác của bạn (trong trường hợp đã di chuyển hoặc GPS sai lệch).</p>
+
+            <div className="h-[300px] w-full rounded-md border border-hairline overflow-hidden relative z-0">
+              <MapContainer center={[updateLocationModal.lat, updateLocationModal.lng]} zoom={14} className="h-full w-full">
+                <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                <LocationPicker 
+                  position={[updateLocationModal.lat, updateLocationModal.lng]} 
+                  setPosition={(pos) => setUpdateLocationModal({ ...updateLocationModal, lat: pos[0], lng: pos[1] })} 
+                />
+              </MapContainer>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-hairline">
+              <button type="button" onClick={() => setUpdateLocationModal(null)} className="btn-secondary">Hủy</button>
+              <button type="button" onClick={async () => {
+                try {
+                  await rescueApi.updateLocation(updateLocationModal.id, { latitude: updateLocationModal.lat, longitude: updateLocationModal.lng });
+                  alert("Cập nhật vị trí thành công!");
+                  setUpdateLocationModal(null);
+                  load();
+                } catch {
+                  alert("Cập nhật vị trí thất bại.");
+                }
+              }} className="btn-primary">Lưu vị trí mới</button>
             </div>
           </div>
         </div>

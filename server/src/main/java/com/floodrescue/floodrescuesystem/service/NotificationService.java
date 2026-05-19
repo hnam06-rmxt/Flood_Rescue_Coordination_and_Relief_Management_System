@@ -22,10 +22,13 @@ public class NotificationService {
         this.userRepository = userRepository;
     }
 
-    @Transactional
+    @org.springframework.transaction.annotation.Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
     public void createNotification(Long userId, String title, String message, String type, Long referenceId) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found with ID: " + userId));
+        User user = userRepository.findById(userId).orElse(null);
+        if (user == null) {
+            System.out.println("WARNING: Skip creating notification, User not found with ID: " + userId);
+            return;
+        }
 
         Notification notification = new Notification();
         notification.setUser(user);

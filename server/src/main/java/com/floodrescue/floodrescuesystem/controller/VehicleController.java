@@ -25,7 +25,7 @@ public class VehicleController {
     }
 
     @PostMapping
-    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'COORDINATOR')")
     @Operation(summary = "Thêm phương tiện", description = "Thêm phương tiện cứu hộ mới")
     public ApiResponse<VehicleResponse> createVehicle(@Valid @RequestBody CreateVehicleRequest request) {
         return ApiResponse.success("Vehicle created", vehicleService.createVehicle(request));
@@ -68,7 +68,7 @@ public class VehicleController {
     }
 
     @PutMapping("/{id}")
-    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'COORDINATOR')")
     @Operation(summary = "Cập nhật phương tiện", description = "Cập nhật thông tin chi tiết phương tiện")
     public ApiResponse<VehicleResponse> updateVehicle(
             @PathVariable Long id,
@@ -77,7 +77,7 @@ public class VehicleController {
     }
 
     @DeleteMapping("/{id}")
-    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'COORDINATOR')")
     @Operation(summary = "Xóa phương tiện", description = "Xóa phương tiện cứu hộ")
     public ApiResponse<Void> deleteVehicle(@PathVariable Long id) {
         vehicleService.deleteVehicle(id);

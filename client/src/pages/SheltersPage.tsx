@@ -4,6 +4,27 @@ import { shelterApi } from "../services/apiService";
 import type { Shelter } from "../types/rescue";
 import { useUserStore } from "../hooks/useUserStore";
 
+import { MapContainer, TileLayer, Marker, useMapEvents } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+
+// Fix Leaflet default icon issue
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png",
+  iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png",
+  shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
+});
+
+function LocationPicker({ position, setPosition }: { position: [number, number], setPosition: (pos: [number, number]) => void }) {
+  useMapEvents({
+    click(e) {
+      setPosition([e.latlng.lat, e.latlng.lng]);
+    },
+  });
+  return <Marker position={position} />;
+}
+
 export function SheltersPage() {
   const profile = useUserStore(s => s.profile);
   const userRole = profile?.role || "";
@@ -13,8 +34,8 @@ export function SheltersPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingShelter, setEditingShelter] = useState<Shelter | null>(null);
   
-  const [form, setForm] = useState({ name: "", location: "", latitude: 15.0, longitude: 108.0, capacity: 100, currentOccupancy: 0, status: "OPEN", contactInfo: "" });
-  const [editForm, setEditForm] = useState({ name: "", location: "", latitude: 15.0, longitude: 108.0, capacity: 100, currentOccupancy: 0, status: "OPEN", contactInfo: "" });
+  const [form, setForm] = useState({ name: "", location: "", latitude: 15.825, longitude: 108.236, capacity: 100, currentOccupancy: 0, status: "OPEN", contactInfo: "" });
+  const [editForm, setEditForm] = useState({ name: "", location: "", latitude: 15.825, longitude: 108.236, capacity: 100, currentOccupancy: 0, status: "OPEN", contactInfo: "" });
 
   useEffect(() => { load(); }, []);
   async function load() { 
@@ -26,7 +47,7 @@ export function SheltersPage() {
     try { 
       await shelterApi.create(form); 
       setShowForm(false); 
-      setForm({ name: "", location: "", latitude: 15.0, longitude: 108.0, capacity: 100, currentOccupancy: 0, status: "OPEN", contactInfo: "" });
+      setForm({ name: "", location: "", latitude: 15.825, longitude: 108.236, capacity: 100, currentOccupancy: 0, status: "OPEN", contactInfo: "" });
       load(); 
       alert("Thêm điểm an toàn thành công!");
     } catch (err: any) {
@@ -84,14 +105,8 @@ export function SheltersPage() {
     }
     try {
       await shelterApi.update(s.id, {
-        name: s.name,
-        location: s.location,
-        latitude: s.latitude,
-        longitude: s.longitude,
-        capacity: s.capacity,
+        ...s,
         currentOccupancy: newOccupancy,
-        status: s.status,
-        contactInfo: s.contactInfo
       });
       load();
     } catch (err: any) {
@@ -116,20 +131,35 @@ export function SheltersPage() {
       {showForm && (
         <div className="card p-6 animate-slide-up">
           <h2 className="text-sm font-semibold text-ink mb-4">📍 Thêm Điểm Trú Ẩn Mới</h2>
-          <form onSubmit={handleCreate} className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <form onSubmit={handleCreate} className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div><label className="block text-sm font-medium mb-1">Tên điểm an toàn</label>
               <input className="input-field" placeholder="Trường Tiểu học Nguyễn Huệ..." value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required /></div>
             <div><label className="block text-sm font-medium mb-1">Địa chỉ (Vị trí)</label>
               <input className="input-field" placeholder="123 Nguyễn Trãi, Phường A..." value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} required /></div>
             <div><label className="block text-sm font-medium mb-1">Sức chứa (Người)</label>
               <input type="number" min="1" className="input-field" value={form.capacity} onChange={e => setForm({ ...form, capacity: +e.target.value })} required /></div>
-            <div><label className="block text-sm font-medium mb-1">Vĩ độ</label>
-              <input type="number" step="any" className="input-field" value={form.latitude} onChange={e => setForm({ ...form, latitude: +e.target.value })} required /></div>
-            <div><label className="block text-sm font-medium mb-1">Kinh độ</label>
-              <input type="number" step="any" className="input-field" value={form.longitude} onChange={e => setForm({ ...form, longitude: +e.target.value })} required /></div>
             <div><label className="block text-sm font-medium mb-1">Liên hệ / Điện thoại</label>
               <input className="input-field" placeholder="SĐT Ban chỉ huy: 0987..." value={form.contactInfo} onChange={e => setForm({ ...form, contactInfo: e.target.value })} /></div>
-            <div className="md:col-span-3 flex gap-2 pt-2">
+            
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium mb-1 flex items-center justify-between">
+                <span>Vị trí trên Bản đồ (Click để chọn tọa độ)</span>
+                <span className="text-xs text-brand-teal font-semibold font-mono bg-tint-mint px-2 py-0.5 rounded border border-brand-teal/20">
+                  Vĩ độ: {form.latitude.toFixed(6)}, Kinh độ: {form.longitude.toFixed(6)}
+                </span>
+              </label>
+              <div className="h-[250px] w-full rounded-md border border-hairline overflow-hidden mt-1 relative z-0">
+                <MapContainer center={[form.latitude, form.longitude]} zoom={13} className="h-full w-full">
+                  <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                  <LocationPicker 
+                    position={[form.latitude, form.longitude]} 
+                    setPosition={(pos) => setForm({ ...form, latitude: pos[0], longitude: pos[1] })} 
+                  />
+                </MapContainer>
+              </div>
+            </div>
+
+            <div className="md:col-span-2 flex gap-2 pt-2 border-t border-hairline">
               <button type="submit" className="btn-primary">Tạo mới</button>
               <button type="button" onClick={() => setShowForm(false)} className="btn-secondary">Hủy</button>
             </div>
@@ -140,12 +170,12 @@ export function SheltersPage() {
       {/* Edit Modal Popup */}
       {editingShelter && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="card max-w-2xl w-full p-6 animate-scale-up space-y-4">
+          <div className="card max-w-3xl w-full p-6 animate-scale-up space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-hairline pb-2">
               <h3 className="text-md font-semibold text-ink flex items-center gap-1.5">
                 <Edit2 size={16} className="text-brand-purple" /> Cập nhật điểm an toàn
               </h3>
-              <button onClick={() => setEditingShelter(null)} className="text-slate hover:text-ink text-sm">Đóng</button>
+              <button type="button" onClick={() => setEditingShelter(null)} className="text-slate hover:text-ink text-sm">Đóng</button>
             </div>
 
             <form onSubmit={handleUpdate} className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -157,10 +187,6 @@ export function SheltersPage() {
                 <input type="number" min="1" className="input-field" value={editForm.capacity} onChange={e => setEditForm({ ...editForm, capacity: +e.target.value })} required /></div>
               <div><label className="block text-sm font-medium mb-1">Số người đang trú ẩn</label>
                 <input type="number" min="0" max={editForm.capacity} className="input-field" value={editForm.currentOccupancy} onChange={e => setEditForm({ ...editForm, currentOccupancy: +e.target.value })} required /></div>
-              <div><label className="block text-sm font-medium mb-1">Vĩ độ</label>
-                <input type="number" step="any" className="input-field" value={editForm.latitude} onChange={e => setEditForm({ ...editForm, latitude: +e.target.value })} required /></div>
-              <div><label className="block text-sm font-medium mb-1">Kinh độ</label>
-                <input type="number" step="any" className="input-field" value={editForm.longitude} onChange={e => setEditForm({ ...editForm, longitude: +e.target.value })} required /></div>
               <div><label className="block text-sm font-medium mb-1">Trạng thái điểm</label>
                 <select className="input-field" value={editForm.status} onChange={e => setEditForm({ ...editForm, status: e.target.value })} required>
                   <option value="OPEN">ĐANG MỞ (OPEN)</option>
@@ -168,6 +194,24 @@ export function SheltersPage() {
                 </select></div>
               <div><label className="block text-sm font-medium mb-1">Thông tin liên hệ</label>
                 <input className="input-field" value={editForm.contactInfo} onChange={e => setEditForm({ ...editForm, contactInfo: e.target.value })} /></div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium mb-1 flex items-center justify-between">
+                  <span>Vị trí trên Bản đồ (Click để chọn lại tọa độ)</span>
+                  <span className="text-xs text-brand-purple font-semibold font-mono bg-tint-lavender px-2 py-0.5 rounded border border-brand-purple/20">
+                    Vĩ độ: {editForm.latitude.toFixed(6)}, Kinh độ: {editForm.longitude.toFixed(6)}
+                  </span>
+                </label>
+                <div className="h-[250px] w-full rounded-md border border-hairline overflow-hidden mt-1 relative z-0">
+                  <MapContainer center={[editForm.latitude, editForm.longitude]} zoom={14} className="h-full w-full">
+                    <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                    <LocationPicker 
+                      position={[editForm.latitude, editForm.longitude]} 
+                      setPosition={(pos) => setEditForm({ ...editForm, latitude: pos[0], longitude: pos[1] })} 
+                    />
+                  </MapContainer>
+                </div>
+              </div>
 
               <div className="md:col-span-2 flex justify-end gap-2 pt-4 border-t border-hairline">
                 <button type="button" onClick={() => setEditingShelter(null)} className="btn-secondary">Hủy</button>

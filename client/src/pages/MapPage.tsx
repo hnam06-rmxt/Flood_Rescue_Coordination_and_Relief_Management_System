@@ -4,7 +4,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { rescueApi, shelterApi, teamApi } from "../services/apiService";
 import type { RescueRequest, Shelter, RescueTeam } from "../types/rescue";
-import { LifeBuoy, Shield, Layers, Truck, TriangleAlert } from "lucide-react";
+import { LifeBuoy, Shield, Layers, Truck, TriangleAlert, MapPin, Navigation } from "lucide-react";
 import { useUserStore } from "../hooks/useUserStore";
 
 // Fix Leaflet default icon issue
@@ -33,17 +33,33 @@ const shelterIcon = new L.Icon({
   iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41],
 });
 
+const myLocationIcon = new L.Icon({
+  iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-violet.png",
+  shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
+  iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41],
+});
+
 const urgencyColors: Record<string, string> = {
   CRITICAL: "bg-semantic-error", HIGH: "bg-brand-orange-deep", MEDIUM: "bg-link", LOW: "bg-semantic-success",
 };
 
-function FitBounds({ positions }: { positions: [number, number][] }) {
+function FitBounds({ positions, disabled }: { positions: [number, number][], disabled?: boolean }) {
   const map = useMap();
   useEffect(() => {
-    if (positions.length > 0) {
+    if (positions.length > 0 && !disabled) {
       map.fitBounds(positions, { padding: [50, 50], maxZoom: 13 });
     }
-  }, [map, positions]);
+  }, [map, positions, disabled]);
+  return null;
+}
+
+function FlyToLocation({ position }: { position: [number, number] | null }) {
+  const map = useMap();
+  useEffect(() => {
+    if (position) {
+      map.flyTo(position, 15, { animate: true, duration: 1.5 });
+    }
+  }, [map, position]);
   return null;
 }
 
@@ -73,10 +89,25 @@ export function MapPage() {
   const [showShelters, setShowShelters] = useState(true);
   const [showTeams, setShowTeams] = useState(true);
 
+  // My Location
+  const [myLocation, setMyLocation] = useState<[number, number] | null>(null);
+
   // Geo-fencing state
   const [dangerZones, setDangerZones] = useState<[number, number][][]>([]);
   const [drawingZone, setDrawingZone] = useState<[number, number][]>([]);
   const [isDrawing, setIsDrawing] = useState(false);
+
+  const locateMe = () => {
+    if (!navigator.geolocation) {
+      alert("Trình duyệt không hỗ trợ GPS.");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => setMyLocation([pos.coords.latitude, pos.coords.longitude]),
+      () => alert("Không thể lấy vị trí hiện tại."),
+      { enableHighAccuracy: true }
+    );
+  };
 
   const loadData = () => {
     rescueApi.getAll().then(setRequests).catch(() => {});
@@ -129,16 +160,31 @@ export function MapPage() {
               ${showShelters ? "bg-semantic-success/10 text-semantic-success" : "bg-surface text-slate border border-hairline"}`}>
             <Shield size={14} /> Điểm an toàn
           </button>
+          <button onClick={locateMe}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors border border-brand-purple text-brand-purple hover:bg-tint-lavender`}>
+            <Navigation size={14} /> Vị trí của tôi
+          </button>
         </div>
       </div>
 
       <div className="card overflow-hidden" style={{ height: "calc(100vh - 200px)" }}>
-        <MapContainer center={[15.8, 108.2]} zoom={10} className="h-full w-full">
+        <MapContainer center={[16.047079, 108.206230]} zoom={6} className="h-full w-full">
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-          <FitBounds positions={allPositions} />
+          <FitBounds positions={allPositions} disabled={myLocation !== null} />
+          <FlyToLocation position={myLocation} />
+
+          {myLocation && (
+            <Marker position={myLocation} icon={myLocationIcon}>
+              <Popup>
+                <div className="font-semibold text-brand-purple flex items-center gap-1">
+                  <MapPin size={14} /> Bạn đang ở đây
+                </div>
+              </Popup>
+            </Marker>
+          )}
 
           {showRequests && requests.filter(r => r.latitude && r.longitude).map(req => (
             <Marker key={`req-${req.requestId}`} position={[req.latitude, req.longitude]} icon={rescueIcon}>
@@ -230,6 +276,10 @@ export function MapPage() {
         <div className="flex items-center gap-1.5 text-xs">
           <img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png" className="h-5" />
           <span>Điểm an toàn</span>
+        </div>
+        <div className="flex items-center gap-1.5 text-xs">
+          <img src="https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-violet.png" className="h-5" />
+          <span>Vị trí của bạn</span>
         </div>
         <div className="flex items-center gap-1.5 text-xs">
           <div className="w-4 h-4 bg-error/40 border border-error"></div>

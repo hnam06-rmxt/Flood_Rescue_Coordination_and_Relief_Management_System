@@ -622,9 +622,76 @@ flood-rescue-system/
 
 ---
 
-## 5. Đặc Tả RESTful API Đầy Đủ (API Specifications)
+## 5. Đặc Tả Phân Hệ Chức Năng (Functional Module Specifications)
 
-### 5.1 Phân Hệ Xác Thực & Quản Trị Phiên (`/api/auth`)
+Hệ thống được cấu trúc thành 5 phân hệ lớn, tương ứng với 5 vai trò chính trong kịch bản cứu hộ thiên tai. Mỗi chức năng được gán mã cụ thể để liên kết chặt chẽ từ giao diện (Frontend) đến API nghiệp vụ (Backend) và các thực thể dữ liệu vật lý hiện hữu trong mã nguồn của hệ thống.
+
+### 5.1 Phân Hệ Quản Trị Viên Hệ Thống (System Administrator Module)
+Cung cấp công cụ quản trị hạt nhân, bảo mật và giám sát tính ổn định của toàn hệ thống.
+
+| Mã Chức Năng | Tên Chức Năng | Luồng Nghiệp Vụ & Mô Tả Chi Tiết | Tương Tác API & Database |
+|:---|:---|:---|:---|
+| **FE-ADM-01** | Đăng nhập / Đăng xuất | Xác thực tài khoản quản trị hệ thống, cấp JWT Bearer Token, hủy phiên làm việc và đưa Token hiện hành vào danh sách đen của Redis để bảo đảm an toàn. | `POST /api/auth/login`<br/>`POST /api/auth/logout`<br/>Redis: `blacklist:token` |
+| **FE-ADM-02** | Quản lý tài khoản | Tạo mới, kích hoạt, vô hiệu hóa tài khoản, đổi mật khẩu và quản lý hồ sơ người dùng trên toàn tỉnh. | `GET/POST/PUT/DELETE /api/users` (Admin Only)<br/>PostgreSQL: `users` |
+| **FE-ADM-03** | Cấu hình phân quyền (RBAC) | Gán các vai trò hệ thống (`ADMIN`, `COORDINATOR`, `MANAGER`, `RESCUER`, `CITIZEN`) cho các tài khoản, kiểm soát quyền truy cập tài nguyên API chặt chẽ. | `PATCH /api/users/{id}/role`<br/>PostgreSQL: `roles`, `users` |
+| **FE-ADM-04** | Thiết lập thông số hệ thống | Quản lý và thiết lập các thông số hạt nhân tĩnh của máy chủ (như JWT TTL, cổng kết nối CSDL PostgreSQL, địa chỉ cổng Redis Cache, định mức cảnh báo kho) thông qua tệp cấu hình `application.properties`. | Cấu hình tĩnh trên Spring Boot Server |
+| **FE-ADM-05** | Giám sát nhật ký giao dịch hệ thống | Ghi nhận tự động dấu vết giao dịch nghiệp vụ và vết lỗi tập trung của máy chủ ứng dụng qua cơ chế log (`Slf4j` / Logback) để phục vụ giám sát kỹ thuật. | Log Console / Server Log File |
+
+### 5.2 Phân Hệ Điều Phối Viên (Coordinator Command Module)
+Đóng vai trò là "Sở Chỉ Huy Số", tiếp nhận thông tin khẩn cấp và điều khiển tài nguyên cứu hộ toàn tỉnh.
+
+| Mã Chức Năng | Tên Chức Năng | Luồng Nghiệp Vụ & Mô Tả Chi Tiết | Tương Tác API & Database |
+|:---|:---|:---|:---|
+| **FE-CO-01** | Đăng nhập / Đăng xuất | Đăng nhập vào màn hình tác chiến của Sở chỉ huy, tiếp nhận quyền điều phối. | `POST /api/auth/login` |
+| **FE-CO-02** | Tiếp nhận & xác minh SOS | Hiển thị danh sách các yêu cầu SOS của người dân theo thời gian thực trên bản đồ số GIS. Điều phối viên gọi điện xác minh thông tin, cập nhật ghi chú hiện trường. | `GET /api/rescue-requests`<br/>`PUT /api/rescue-requests/{id}`<br/>PostgreSQL: `rescue_requests` |
+| **FE-CO-03** | Phân loại mức độ khẩn cấp | Đánh giá mức độ nguy hiểm (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`) dựa trên số lượng người gặp nạn, tình hình ngập sâu, và người già/trẻ em đi kèm để áp đặt SLA phản ứng nhanh. | `PATCH /api/rescue-requests/{id}/urgency`<br/>PostgreSQL: `rescue_requests` |
+| **FE-CO-04** | Quản lý vị trí địa lý điểm ghim | Quản lý vị trí, tọa độ kinh/vĩ độ của các trạm trú ẩn an toàn, các ca SOS cứu hộ để định vị trực quan trên bản đồ Leaflet GIS và tự động tính toán bán kính cứu hộ. | `GET/POST/DELETE /api/shelters`<br/>PostgreSQL: `shelters`, `rescue_requests` |
+| **FE-CO-05** | Quản lý đội cứu hộ | Thành lập mới, điều chỉnh nhân sự, cập nhật thông tin liên lạc và tình trạng sẵn sàng (`ACTIVE`, `INACTIVE`, `BUSY`) của các đội phản ứng nhanh thực địa. | `GET/POST/PUT/DELETE /api/rescue-teams`<br/>PostgreSQL: `rescue_teams` |
+| **FE-CO-06** | Phân công đội tác chiến | **Tác vụ hạt nhân**: Hệ thống gợi ý 3 đội rảnh gần nhất qua Redis GeoSet. Điều phối viên chỉ định đội tiếp cận ca SOS, hệ thống gửi thông báo đẩy an toàn (Isolated Transaction). | `PATCH /api/rescue-requests/{id}/assign`<br/>`GET /rescue-requests/{id}/nearby-teams`<br/>Redis: `geo:rescue_teams` |
+| **FE-CO-07** | Theo dõi tiến độ thời gian thực | Giám sát vị trí di chuyển GPS của đội cứu hộ và nạn nhân trực tiếp trên bản đồ tác chiến Leaflet số, cập nhật trạng thái di dời. | `GET /api/rescue-teams/{id}/location`<br/>`GET /api/rescue-requests/{id}/location`<br/>Redis: `geo:rescue_teams` |
+| **FE-CO-08** | Phân bổ phương tiện cứu hộ | Điều động bổ sung hoặc thu hồi xe đặc chủng, tàu cano cứu nạn được cấp phát cho các đội cứu hộ tùy theo tình trạng ngập sâu thực địa. | `PATCH /api/vehicles/{id}/assign-team`<br/>PostgreSQL: `vehicles` |
+| **FE-CO-09** | Quản lý thông báo khẩn cấp | Biên soạn và phát sóng cảnh báo lũ khẩn cấp (vùng xả lũ, cảnh báo sạt lở) đến toàn bộ ứng dụng người dân trong khu vực ảnh hưởng. | `POST /api/flood-alerts`<br/>PostgreSQL: `flood_alerts`, `notifications` |
+| **FE-CO-10** | Thống kê số liệu và báo cáo tổng hợp | Tổng hợp trực quan số lượng người được cứu, tỷ lệ hoàn thành ca SOS, biểu đồ kho vật tư logistics trực tiếp trên Dashboard tác chiến thời gian thực thông qua API thống kê tổng hợp. | `GET /api/admin/dashboard`<br/>PostgreSQL: `rescue_requests`, `relief_distributions` |
+
+### 5.3 Phân Hệ Người Dân (Citizen Portal Module)
+Cổng giao tiếp gọn nhẹ, trực quan giúp người dân vùng lũ tương tác khẩn cấp với lực lượng cứu hộ.
+
+| Mã Chức Năng | Tên Chức Năng | Luồng Nghiệp Vụ & Mô Tả Chi Tiết | Tương Tác API & Database |
+|:---|:---|:---|:---|
+| **FE-CIT-01** | Đăng ký / Đăng nhập / Đăng xuất | Tạo tài khoản nhanh bằng số điện thoại để hệ thống lưu thông tin định danh phục vụ liên lạc cứu nạn. | `POST /api/auth/register`<br/>`POST /api/auth/login` |
+| **FE-CIT-02** | Gửi yêu cầu SOS khẩn cấp | Bấm nút SOS đỏ lớn, hệ thống tự động lấy tọa độ GPS từ trình duyệt/di động, cho phép tải lên hình ảnh hiện trường nguy hiểm và nhập số lượng người cần cứu. | `POST /api/rescue-requests`<br/>PostgreSQL: `rescue_requests` |
+| **FE-CIT-03** | Sửa vị trí / Hủy yêu cầu | Cho phép người dân kéo thả ghim vị trí chính xác trên bản đồ tương tác khi di chuyển lên mái nhà, hoặc hủy yêu cầu SOS nếu đã di dời an toàn. | `PATCH /api/rescue-requests/{id}/location`<br/>`PATCH /api/rescue-requests/{id}/cancel`<br/>PostgreSQL: `rescue_requests` |
+| **FE-CIT-04** | Theo dõi trạng thái & Lộ trình | Xem tiến trình xử lý yêu cầu cứu hộ (`PENDING` -> `ASSIGNED` -> `IN_PROGRESS` -> `COMPLETED`) và xem khoảng cách hành trình di chuyển thực tế của đội cứu hộ đang đến cứu. | `GET /api/rescue-requests/my-requests`<br/>Redis: `geo:rescue_teams` |
+| **FE-CIT-05** | Xác nhận hoàn thành | Người dân bấm xác nhận "Đã được cứu hộ an toàn" khi đội cứu hộ tiếp cận và di dời thành công, khép lại vòng đời ca cứu hộ. | `PATCH /api/rescue-requests/{id}/confirm-rescued`<br/>PostgreSQL: `rescue_requests` |
+
+### 5.4 Phân Hệ Đội Cứu Hộ Thực Địa (Rescuer Field Module)
+Ứng dụng tác chiến di động dành cho các đội viên phản ứng nhanh tại hiện trường ngập lụt.
+
+| Mã Chức Năng | Tên Chức Năng | Luồng Nghiệp Vụ & Mô Tả Chi Tiết | Tương Tác API & Database |
+|:---|:---|:---|:---|
+| **FE-RES-01** | Đăng nhập / Đăng xuất | Đăng nhập tài khoản đội viên, chuyển trạng thái hoạt động sang sẵn sàng nhận lệnh. | `POST /api/auth/login` |
+| **FE-RES-02** | Tiếp nhận nhiệm vụ | Nhận thông báo đẩy âm thanh khẩn cấp khi có ca phân công mới, xem chi tiết số lượng nạn nhân, hình ảnh và ghi chú nguy hiểm. | `GET /api/rescue-requests/assigned`<br/>PostgreSQL: `rescue_requests` |
+| **FE-RES-03** | Xem vị trí & Chỉ đường | Bản đồ GPS Leaflet vẽ tuyến đường ngắn nhất từ vị trí hiện tại của đội cứu hộ đến vị trí người dân đang bị cô lập. | `GET /api/rescue-requests/{id}`<br/>Tích hợp Leaflet Routing Machine / Google Maps |
+| **FE-RES-04** | Cập nhật trạng thái | Đội viên cập nhật tiến độ cứu hộ (`Xác nhận tiếp nhận` -> `Đang di chuyển` -> `Đã tiếp cận hiện trường` -> `Đã đưa về trạm trú ẩn`). | `PATCH /api/rescue-requests/{id}/status`<br/>PostgreSQL: `rescue_requests` |
+| **FE-RES-05** | Gửi báo cáo định vị hiện trường | Hệ thống tự động chia sẻ tọa độ định vị GPS của đội cứu hộ thực địa mỗi 30 giây lên Redis GeoSet và ghi chú tác chiến trực tiếp trên ca SOS. | `PATCH /api/rescue-teams/{id}/location`<br/>`PATCH /api/rescue-requests/{id}/status`<br/>Redis: `geo:rescue_teams` |
+
+### 5.5 Phân Hệ Quản Lý Cứu Trợ & Logistics (Relief & Logistics Manager Module)
+Quản trị kho bãi lương thực, nhu yếu phẩm và điều phối đội tàu cano chuyên chở hàng cứu trợ.
+
+| Mã Chức Năng | Tên Chức Năng | Luồng Nghiệp Vụ & Mô Tả Chi Tiết | Tương Tác API & Database |
+|:---|:---|:---|:---|
+| **FE-LOG-01** | Đăng nhập / Đăng xuất | Xác thực và truy cập phân hệ quản lý kho bãi, vật tư y tế và phương tiện. | `POST /api/auth/login` |
+| **FE-LOG-02** | Quản lý phương tiện cứu hộ | Quản lý danh mục cano, xuồng máy, xe lội nước; theo dõi tình trạng bảo dưỡng, nhiên liệu và cấp phát xe cho đội cứu hộ cụ thể. | `GET/POST/PUT/DELETE /api/vehicles`<br/>PostgreSQL: `vehicles` |
+| **FE-LOG-03** | Quản lý kho hàng cứu trợ | Khai báo danh mục nhu yếu phẩm (gạo, nước sạch, mì tôm, áo phao, túi y tế), cập nhật số lượng nhập kho từ các nguồn tài trợ. | `GET/POST/PUT/DELETE /api/relief/items`<br/>PostgreSQL: `relief_items` |
+| **FE-LOG-04** | Theo dõi phân phối | Ghi nhận hoạt động xuất kho cấp phát nhu yếu phẩm đến các địa điểm điểm lánh nạn an toàn hoặc giao trực tiếp cho các đội cứu hộ vận chuyển đường thủy. | `POST /api/relief/distributions`<br/>PostgreSQL: `relief_distributions`, `relief_items` |
+| **FE-LOG-05** | Cảnh báo tồn kho an toàn | Hệ thống tự động kích hoạt cảnh báo đỏ khi lượng nhu yếu phẩm trong kho giảm xuống dưới ngưỡng an toàn thiết lập, đảm bảo nguồn hàng không bị đứt gãy. | `GET /api/relief/items/low-stock`<br/>PostgreSQL: `relief_items` |
+| **FE-LOG-06** | Báo cáo thống kê nguồn lực | Biểu đồ hóa số lượng hàng hóa đã cấp phát, phân tích hiệu suất phân phối và dự báo nhu cầu lương thực cho những ngày tiếp theo trực tiếp trên Dashboard. | `GET /api/admin/dashboard`<br/>PostgreSQL: `relief_distributions` |
+
+---
+
+## 6. Đặc Tả RESTful API Đầy Đủ (API Specifications)
+
+### 6.1 Phân Hệ Xác Thực & Quản Trị Phiên (`/api/auth`)
 
 | Phương thức | Đường dẫn API | Mô tả nghiệp vụ | Yêu cầu quyền hạn |
 |:---|:---|:---|:---|
@@ -633,7 +700,7 @@ flood-rescue-system/
 | `POST` | `/api/auth/refresh` | Làm mới Access Token đã hết hạn bằng Refresh Token | Công khai (Public) |
 | `POST` | `/api/auth/logout` | Đăng xuất, ghi danh sách đen JWT hiện hành vào Redis | Đã đăng nhập |
 
-### 5.2 Phân Hệ Yêu Cầu Cứu Hộ Khẩn Cấp (`/api/rescue-requests`)
+### 6.2 Phân Hệ Yêu Cầu Cứu Hộ Khẩn Cấp (`/api/rescue-requests`)
 
 | Phương thức | Đường dẫn API | Mô tả nghiệp vụ | Yêu cầu quyền hạn |
 |:---|:---|:---|:---|
@@ -650,7 +717,7 @@ flood-rescue-system/
 | `PATCH` | `/api/rescue-requests/{id}/urgency` | Cập nhật mức độ khẩn cấp (CRITICAL, HIGH...) sau khi xác thực | `COORDINATOR`, `ADMIN` |
 | `DELETE` | `/api/rescue-requests/{id}` | Xóa yêu cầu SOS bị spam hoặc sai lệch | `ADMIN` |
 
-### 5.3 Phân Hệ Đội Cứu Hộ & Phương Tiện Can Tác
+### 6.3 Phân Hệ Đội Cứu Hộ & Phương Tiện Can Tác
 
 | Phương thức | Đường dẫn API | Mô tả nghiệp vụ | Yêu cầu quyền hạn |
 |:---|:---|:---|:---|
@@ -663,7 +730,7 @@ flood-rescue-system/
 | `POST` | `/api/vehicles` | Nhập thêm phương tiện cứu hộ mới | `COORDINATOR`, `ADMIN` |
 | `PATCH` | `/api/vehicles/{id}/assign-team` | Giao xe/xuồng cano cho một đội phản ứng nhanh cụ thể quản lý | `COORDINATOR`, `ADMIN` |
 
-### 5.4 Phân Hệ Trạm Trú Ẩn An Toàn (`/api/shelters`)
+### 6.4 Phân Hệ Trạm Trú Ẩn An Toàn (`/api/shelters`)
 
 | Phương thức | Đường dẫn API | Mô tả nghiệp vụ | Yêu cầu quyền hạn |
 |:---|:---|:---|:---|
@@ -672,7 +739,7 @@ flood-rescue-system/
 | `PUT` | `/api/shelters/{id}` | Cập nhật số người đang lánh nạn thực tế tại trạm | `MANAGER`, `COORDINATOR` |
 | `DELETE` | `/api/shelters/{id}` | Xóa điểm trú ẩn khỏi danh sách bản đồ | `ADMIN` |
 
-### 5.5 Phân Hệ Cứu Trợ Logistics (`/api/relief`)
+### 6.5 Phân Hệ Cứu Trợ Logistics (`/api/relief`)
 
 | Phương thức | Đường dẫn API | Mô tả nghiệp vụ | Yêu cầu quyền hạn |
 |:---|:---|:---|:---|
@@ -917,25 +984,11 @@ npm run dev
 | `spring-boot-starter-data-redis` | Bộ nhớ đệm API, cấu trúc GeoSet | Tăng tốc độ truy xuất, giảm thời gian xử lý khoảng cách |
 | `jackson-datatype-jsr310` | Định dạng và Serialization đối tượng Thời gian | Đảm bảo truyền nhận chuỗi thời gian không bị sai lệch múi giờ |
 | `springdoc-openapi` | Tự động sinh tài liệu tài nguyên API | Hỗ trợ lập trình viên Frontend tích hợp và kiểm thử dễ dàng |
-| `jjwt (0.12.6)` | Tạo lập và kiểm chứng chữ ký số JWT | Mã hóa thông tin vai trò gọn nhẹ, không trạng thái trên server |gn["Cập nhật trạng thái yêu cầu<br/>[Status: ASSIGNED]"]
-    Sys_Assign -->|7. Isolate Transaction an toàn| Notif_Team["Thông báo khẩn tới App Đội trưởng"]
-    
-    Notif_Team --> Team
-    Team -->|"8. Bấm tiếp nhận nhiệm vụ"| Sys_InProgress["Cập nhật trạng thái yêu cầu<br/>[Status: IN_PROGRESS]"]
-    Sys_InProgress -->|9. Chia sẻ GPS hành trình| GPS_Track["Dẫn đường Google Maps thực tế<br/>(Origin Đội -> Destination Nạn nhân)"]
-    
-    GPS_Track --> Team
-    Team -->|10. Tiếp cận & di dời an toàn| Sys_Completed["Cập nhật hoàn thành cứu nạn<br/>[Status: COMPLETED]"]
-    Sys_Completed -->|11. Báo cáo hoàn tất| Citizen
+| `jjwt (0.12.6)` | Tạo lập và kiểm chứng chữ ký số JWT | Mã hóa thông tin vai trò gọn nhẹ, không trạng thái trên server |
 
-    style Citizen fill:#ec4899,stroke:#db2777,stroke-width:2px,color:#fff
-    style Coord fill:#6366f1,stroke:#4f46e5,stroke-width:2px,color:#fff
-    style Team fill:#22c55e,stroke:#16a34a,stroke-width:2px,color:#fff
-    style DB fill:#336791,stroke:#1d4ed8,stroke-width:1px,color:#fff
-    style Redis_Geo fill:#ef4444,stroke:#dc2626,stroke-width:1px,color:#fff
-```
+---
 
-### 7.2 Biểu Đồ Trạng Thái Của Yêu Cầu Cứu Hộ (Rescue Request State Machine)
+### 9.2 Biểu Đồ Trạng Thái Của Yêu Cầu Cứu Hộ (Rescue Request State Machine)
 
 ```mermaid
 stateDiagram-v2
@@ -955,9 +1008,9 @@ stateDiagram-v2
 
 ---
 
-## 8. Cấu Hình Môi Trường Thực Thi (Deployment & Environments)
+## 10. Cấu Hình Môi Trường Thực Thi (Deployment & Environments)
 
-### 8.1 Tập Tin Cấu Hình Hạt Nhân (`application.properties`)
+### 10.1 Tập Tin Cấu Hình Hạt Nhân (`application.properties`)
 
 ```properties
 # 1. Cấu hình Cổng Dịch Vụ
@@ -998,7 +1051,7 @@ springdoc.swagger-ui.path=/swagger-ui.html
 springdoc.api-docs.path=/v3/api-docs
 ```
 
-### 8.2 Quy Trình Khởi Chạy Hệ Thống Thực Tế
+### 10.2 Quy Trình Khởi Chạy Hệ Thống Thực Tế
 
 Hệ thống được vận hành nhanh thông qua môi trường dòng lệnh PowerShell trên Windows:
 
@@ -1023,7 +1076,7 @@ npm run dev
 
 ---
 
-## 9. Thống Kê Thư Viện Lõi Sử Dụng (System Dependencies)
+## 11. Thống Kê Thư Viện Lõi Sử Dụng (System Dependencies)
 
 | Thư viện | Mục đích sử dụng | Lợi ích tối ưu |
 |:---|:---|:---|

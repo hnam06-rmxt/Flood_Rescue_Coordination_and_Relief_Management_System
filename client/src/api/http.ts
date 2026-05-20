@@ -2,10 +2,14 @@ import axios from "axios";
 import { getStoredAccessToken } from "../services/sessionStorage";
 import { ApiClientError } from "../types/api";
 
-const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
+// Đọc đúng biến môi trường đã cấu hình trên Vercel:
+// VITE_API_URL=https://flood-rescue-coordination-and-relief-i6xh.onrender.com
+const configuredBaseUrl = import.meta.env.VITE_API_URL?.trim();
 
 export const apiBaseUrl =
-  configuredBaseUrl && configuredBaseUrl.length > 0 ? configuredBaseUrl : "/api";
+  configuredBaseUrl && configuredBaseUrl.length > 0
+    ? `${configuredBaseUrl}/api`
+    : "/api";
 
 export const http = axios.create({
   baseURL: apiBaseUrl,
@@ -38,7 +42,7 @@ export function normalizeApiError(error: unknown): ApiClientError {
   const details = error.response?.data;
 
   if (details && typeof details === "object" && "message" in details) {
-    return new ApiClientError(String(details.message), status, details);
+    return new ApiClientError(String((details as { message: unknown }).message), status, details);
   }
 
   if (typeof error.message === "string" && error.message.length > 0) {

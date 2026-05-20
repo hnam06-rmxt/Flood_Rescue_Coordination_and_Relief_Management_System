@@ -2,16 +2,93 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  color-scheme: dark;
+@layer base {
+  :root {
+    --primary: #6366f1;
+    --primary-pressed: #4f46e5;
+    --primary-deep: #3730a3;
+    --brand-navy: #0b1120;
+    --brand-navy-deep: #020617;
+    --brand-navy-mid: #1e293b;
+    --link-blue: #2383e2;
+    
+    --brand-pink: #d44079;
+    --brand-orange: #d9730d;
+    --brand-orange-deep: #ad5700;
+    --brand-purple: #9065b0;
+    --brand-purple-800: #4a2b6a;
+    --brand-teal: #129291;
+    --brand-green: #0b6e4f;
+    --brand-yellow: #dfab01;
+    
+    --tint-peach: #fff0e5;
+    --tint-rose: #fff0f5;
+    --tint-mint: #f0fff4;
+    --tint-lavender: #f5f3ff;
+    --tint-sky: #f0f9ff;
+    --tint-yellow: #fefce8;
+    --tint-yellow-bold: #fde047;
+    --tint-gray: #f9fafb;
+    
+    --canvas: #ffffff;
+    --surface: #f7f7f5;
+    --surface-soft: #f1f1ef;
+    --hairline: rgba(15, 15, 15, 0.1);
+    --hairline-soft: rgba(15, 15, 15, 0.05);
+    --hairline-strong: rgba(15, 15, 15, 0.2);
+    
+    --ink-deep: #050505;
+    --ink: #37352f;
+    --charcoal: #403e39;
+    --slate: #787774;
+    --steel: #9b9a97;
+    --stone: #acaba9;
+    --on-dark: #ffffff;
+    
+    --success: #0b6e4f;
+    --warning: #d9730d;
+    --error: #d44000;
+  }
+
+  body {
+    @apply font-sans bg-canvas text-ink antialiased;
+  }
 }
 
-* {
-  box-sizing: border-box;
+@layer components {
+  .hero-display {
+    @apply text-5xl md:text-7xl lg:text-[80px] font-semibold leading-[1.05] tracking-tight;
+  }
+  
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 bg-primary text-white text-sm font-medium rounded-md transition-colors active:bg-primary-pressed disabled:opacity-50;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 bg-transparent text-ink text-sm font-medium rounded-md border border-hairline-strong transition-all;
+  }
+
+  .card {
+    @apply bg-canvas border border-hairline rounded-lg p-6 shadow-sm;
+  }
+
+  .input-field {
+    @apply w-full px-3 py-2 bg-canvas border border-hairline-strong rounded-md text-sm outline-none transition-all focus:border-primary focus:ring-1 focus:ring-primary;
+  }
+
+  /* Badge Styles */
+  .badge-purple { @apply px-2 py-0.5 rounded-full bg-tint-lavender text-primary text-[10px] font-bold uppercase tracking-wider; }
+  .badge-green { @apply px-2 py-0.5 rounded-full bg-tint-mint text-brand-green text-[10px] font-bold uppercase tracking-wider; }
+  .badge-orange { @apply px-2 py-0.5 rounded-full bg-tint-peach text-brand-orange text-[10px] font-bold uppercase tracking-wider; }
+  .badge-red { @apply px-2 py-0.5 rounded-full bg-tint-rose text-error text-[10px] font-bold uppercase tracking-wider; }
+  .badge-blue { @apply px-2 py-0.5 rounded-full bg-tint-sky text-link-blue text-[10px] font-bold uppercase tracking-wider; }
 }
 
-body {
-  margin: 0;
-  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: #020617;
+@layer utilities {
+  .shadow-mockup {
+    box-shadow: 0px 24px 48px -8px rgba(15, 15, 15, 0.20);
+  }
+  .shadow-modal {
+    box-shadow: 0px 16px 48px -8px rgba(15, 15, 15, 0.16);
+  }
 }

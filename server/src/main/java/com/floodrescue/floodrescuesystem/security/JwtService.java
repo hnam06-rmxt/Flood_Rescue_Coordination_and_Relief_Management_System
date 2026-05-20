@@ -51,6 +51,15 @@ public class JwtService {
         return username.equals(userDetails.getUsername()) && !isTokenExpired(token);
     }
 
+    /**
+     * Lấy thời gian còn lại của token (milliseconds).
+     * Dùng cho blacklist khi logout – TTL trong Redis = thời gian token còn hợp lệ.
+     */
+    public long getRemainingExpirationMs(String token) {
+        Date expiration = extractClaim(token, Claims::getExpiration);
+        return Math.max(0, expiration.getTime() - System.currentTimeMillis());
+    }
+
     private String generateToken(Map<String, Object> claims, String subject, long expiration) {
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + expiration);

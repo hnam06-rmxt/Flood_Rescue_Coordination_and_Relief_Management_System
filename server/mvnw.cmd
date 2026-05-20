@@ -30,6 +30,12 @@
 @IF "%__MVNW_ARG0_NAME__%"=="" (SET __MVNW_ARG0_NAME__=%~nx0)
 @SET __MVNW_CMD__=
 @SET __MVNW_ERROR__=
+@SET "__PROJECT_JDK__=%~dp0..\.tools\jdk17\jdk-17.0.18+8"
+@IF EXIST "%__PROJECT_JDK__%\bin\java.exe" (
+  @SET "JAVA_HOME=%__PROJECT_JDK__%"
+  @SET "PATH=%JAVA_HOME%\bin;%PATH%"
+)
+@SET __PROJECT_JDK__=
 @SET __MVNW_PSMODULEP_SAVE=%PSModulePath%
 @SET PSModulePath=
 @FOR /F "usebackq tokens=1* delims==" %%A IN (`powershell -noprofile "& {$scriptDir='%~dp0'; $script='%__MVNW_ARG0_NAME__%'; icm -ScriptBlock ([Scriptblock]::Create((Get-Content -Raw '%~f0'))) -NoNewScope}"`) DO @(
@@ -48,6 +54,14 @@
 $ErrorActionPreference = "Stop"
 if ($env:MVNW_VERBOSE -eq "true") {
   $VerbosePreference = "Continue"
+}
+
+# Force Maven Wrapper to use the project JDK 17 when available.
+$projectJdkHome = [System.IO.Path]::GetFullPath((Join-Path $scriptDir "..\.tools\jdk17\jdk-17.0.18+8"))
+$projectJavaExe = Join-Path $projectJdkHome "bin\java.exe"
+if (Test-Path $projectJavaExe) {
+  $env:JAVA_HOME = $projectJdkHome
+  $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 }
 
 # calculate distributionUrl, requires .mvn/wrapper/maven-wrapper.properties

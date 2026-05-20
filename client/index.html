@@ -9,6 +9,8 @@
   </head>
   <body>
     <div id="app"></div>
+    <!-- sockjs-client needs Node's `global` before any module loads -->
+    <script>window.global = window;</script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

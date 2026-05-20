@@ -16,10 +16,14 @@ public class NotificationService {
 
     private final NotificationRepository notificationRepository;
     private final UserRepository userRepository;
+    private final NotificationWebSocketPublisher webSocketPublisher;
 
-    public NotificationService(NotificationRepository notificationRepository, UserRepository userRepository) {
+    public NotificationService(NotificationRepository notificationRepository,
+                               UserRepository userRepository,
+                               NotificationWebSocketPublisher webSocketPublisher) {
         this.notificationRepository = notificationRepository;
         this.userRepository = userRepository;
+        this.webSocketPublisher = webSocketPublisher;
     }
 
     @org.springframework.transaction.annotation.Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
@@ -38,6 +42,7 @@ public class NotificationService {
         notification.setReferenceId(referenceId);
         notification.setIsRead(false);
         notificationRepository.save(notification);
+        webSocketPublisher.pushToUser(userId, NotificationResponse.fromEntity(notification));
     }
 
     public List<NotificationResponse> getMyNotifications(String username) {

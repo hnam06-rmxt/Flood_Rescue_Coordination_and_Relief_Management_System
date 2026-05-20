@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, LifeBuoy, Users, Truck, Package, Shield, AlertTriangle,
@@ -9,6 +9,7 @@ import { userActions } from "../store/userStore";
 import { useUserStore } from "../hooks/useUserStore";
 import { notifApi } from "../services/apiService";
 import { wsService } from "../lib/websocket";
+import { useNotificationSocket } from "../hooks/useNotificationSocket";
 
 type NavItem = { label: string; path: string; icon: React.ReactNode; roles?: string[] };
 
@@ -40,39 +41,14 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
 
   const filteredNav = navItems.filter(item => !item.roles || item.roles.includes(userRole));
 
-  useEffect(() => {
-    // Load initial count via HTTP
-    loadUnreadCount();
-
-    // Connect WebSocket and subscribe to personal notifications
-    wsService.connect();
-
-    const unsubNotif = profile?.id
-      ? wsService.subscribePersonal(profile.id, (msg) => {
-          setUnreadCount(c => c + 1);
-          const title = (msg.title as string) || "Thông báo mới";
-          const message = (msg.message as string) || "";
-          showToast(title, message);
-        })
-      : () => {};
-
-    // Also subscribe to SOS broadcasts (for staff)
-    const unsubSos = wsService.subscribe("/topic/sos-updates", (msg) => {
-      if (msg.type === "SOS_NEW") {
-        setUnreadCount(c => c + 1);
-        showToast("🚨 SOS Mới!", `${msg.userName} tại ${msg.location}`);
-      }
-    });
-
-    // Fallback polling every 30s (much less frequent than before)
-    const interval = setInterval(loadUnreadCount, 30000);
-
-    return () => {
-      clearInterval(interval);
-      unsubNotif();
-      unsubSos();
-    };
-  }, [profile?.id]);
+  const loadUnreadCount = useCallback(async () => {
+    try {
+      const count = await notifApi.getUnreadCount();
+      setUnreadCount(count || 0);
+    } catch {
+      setUnreadCount(0);
+    }
+  }, []);
 
   function showToast(title: string, message: string) {
     setToast({ title, message });
@@ -80,14 +56,32 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
     toastTimer.current = setTimeout(() => setToast(null), 4000);
   }
 
-  async function loadUnreadCount() {
-    try {
-      const count = await notifApi.getUnreadCount();
-      setUnreadCount(count || 0);
-    } catch {
-      setUnreadCount(0);
-    }
-  }
+  useEffect(() => {
+    loadUnreadCount();
+    
+    // Connect WebSocket and subscribe to SOS broadcasts (for staff)
+    wsService.connect();
+    const unsubSos = wsService.subscribe("/topic/sos-updates", (msg) => {
+      if (msg.type === "SOS_NEW") {
+        setUnreadCount(c => c + 1);
+        showToast("🚨 SOS Mới!", `${msg.userName} tại ${msg.location}`);
+      }
+    });
+
+    return () => {
+      unsubSos();
+    };
+  }, [loadUnreadCount]);
+
+  // Hook for personal notifications
+  useNotificationSocket({
+    onUnreadCount: loadUnreadCount,
+    onNotification: () => {
+        setUnreadCount(c => c + 1);
+        showToast("Thông báo mới", "Bạn có một thông báo mới");
+    },
+    fallbackPollMs: 30000,
+  });
 
   function handleLogout() {
     authActions.logout();

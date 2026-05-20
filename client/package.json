@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@stomp/stompjs": "^7.3.0",
-    "@types/sockjs-client": "^1.5.4",
     "axios": "^1.13.6",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.16.0",
@@ -21,6 +20,7 @@
     "sockjs-client": "^1.6.1"
   },
   "devDependencies": {
+    "@types/sockjs-client": "^1.5.4",
     "@types/leaflet": "^1.9.21",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",

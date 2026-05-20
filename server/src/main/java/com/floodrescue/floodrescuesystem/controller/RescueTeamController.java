@@ -4,10 +4,14 @@ import com.floodrescue.floodrescuesystem.dto.request.CreateRescueTeamRequest;
 import com.floodrescue.floodrescuesystem.dto.request.UpdateStatusRequest;
 import com.floodrescue.floodrescuesystem.dto.response.ApiResponse;
 import com.floodrescue.floodrescuesystem.dto.response.RescueTeamResponse;
+import com.floodrescue.floodrescuesystem.entity.User;
+import com.floodrescue.floodrescuesystem.exception.ResourceNotFoundException;
+import com.floodrescue.floodrescuesystem.repository.UserRepository;
 import com.floodrescue.floodrescuesystem.service.RescueTeamService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -18,9 +22,11 @@ import java.util.List;
 public class RescueTeamController {
 
     private final RescueTeamService rescueTeamService;
+    private final UserRepository userRepository;
 
-    public RescueTeamController(RescueTeamService rescueTeamService) {
+    public RescueTeamController(RescueTeamService rescueTeamService, UserRepository userRepository) {
         this.rescueTeamService = rescueTeamService;
+        this.userRepository = userRepository;
     }
 
     @PostMapping
@@ -37,8 +43,17 @@ public class RescueTeamController {
         return ApiResponse.success("All teams retrieved", rescueTeamService.getAllTeams());
     }
 
+    @GetMapping("/assigned-to-me")
+    @org.springframework.security.access.prepost.PreAuthorize("hasRole('CITIZEN')")
+    @Operation(summary = "Đội cứu hộ đang phụ trách ca của tôi", description = "Citizen xem vị trí đội được gán cho yêu cầu cứu hộ của mình")
+    public ApiResponse<List<RescueTeamResponse>> getTeamsAssignedToMe(Authentication auth) {
+        User user = userRepository.findByUsername(auth.getName())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        return ApiResponse.success("Assigned teams retrieved", rescueTeamService.getTeamsAssignedToCitizen(user.getId()));
+    }
+
     @GetMapping("/{id}")
-    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN', 'COORDINATOR', 'MANAGER', 'RESCUER')")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN', 'COORDINATOR', 'MANAGER', 'RESCUER', 'CITIZEN')")
     @Operation(summary = "Chi tiết đội cứu hộ", description = "Xem chi tiết 1 đội cứu hộ")
     public ApiResponse<RescueTeamResponse> getTeamById(@PathVariable Long id) {
         return ApiResponse.success("Team retrieved", rescueTeamService.getTeamById(id));

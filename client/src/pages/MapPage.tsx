@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap, Polygon, useMapEvents, Polyline } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -8,6 +8,9 @@ import type { RescueRequest, Shelter, RescueTeam } from "../types/rescue";
 import { LifeBuoy, Shield, Layers, Truck, TriangleAlert, MapPin, Navigation, Clock, Users, Phone } from "lucide-react";
 import { useUserStore } from "../hooks/useUserStore";
 import { useSearchParams } from "react-router-dom";
+import { useDrivingRoute } from "../hooks/useDrivingRoute";
+import { RoadRoutePolyline } from "../components/RoadRoutePolyline";
+import type { LatLngTuple } from "../services/routingService";
 
 
 // Fix Leaflet default icon issue
@@ -78,6 +81,14 @@ const myLocationIcon = L.divIcon({
   popupAnchor: [0, -20]
 });
 
+const statusBadge: Record<string, string> = {
+  PENDING: "badge-orange",
+  ASSIGNED: "badge-blue",
+  IN_PROGRESS: "badge-purple",
+  COMPLETED: "badge-green",
+  CANCELLED: "badge-red",
+};
+
 function FitBounds({ positions, disabled }: { positions: [number, number][], disabled?: boolean }) {
   const map = useMap();
   useEffect(() => {
@@ -98,6 +109,16 @@ function FlyToLocation({ position }: { position: [number, number] | null }) {
   return null;
 }
 
+function FitRouteBounds({ positions }: { positions: LatLngTuple[] }) {
+  const map = useMap();
+  useEffect(() => {
+    if (positions.length >= 2) {
+      map.fitBounds(positions, { padding: [60, 60], maxZoom: 14 });
+    }
+  }, [map, positions]);
+  return null;
+}
+
 function MapDrawHandler({ isDrawing, onAddPoint, onFinish }: any) {
   useMapEvents({
     click(e) {
@@ -114,6 +135,7 @@ function MapDrawHandler({ isDrawing, onAddPoint, onFinish }: any) {
 
 export function MapPage() {
   const profile = useUserStore(s => s.profile);
+  const isCitizen = profile?.role === "CITIZEN";
   const isAdmin = profile?.role === "ADMIN" || profile?.role === "COORDINATOR";
   const [searchParams, setSearchParams] = useSearchParams();
   const focusRequestId = searchParams.get("focusRequest");
@@ -156,13 +178,36 @@ export function MapPage() {
     );
   };
 
-  const loadData = () => {
-    rescueApi.getAll().then(setRequests).catch(() => {});
-    shelterApi.getAll().then(setShelters).catch(() => {});
-    teamApi.getAll().then(setTeams).catch(() => {});
+  const loadData = async () => {
+    try {
+      if (isCitizen) {
+        const [myReqs, assignedTeams, shelterList] = await Promise.all([
+          rescueApi.getMyRequests(),
+          teamApi.getAssignedToMe().catch(() => [] as RescueTeam[]),
+          shelterApi.getAll(),
+        ]);
+        setRequests(myReqs || []);
+        setTeams(assignedTeams || []);
+        setShelters(shelterList || []);
+      } else {
+        const [allReqs, allTeams, shelterList] = await Promise.all([
+          rescueApi.getAll(),
+          teamApi.getAll(),
+          shelterApi.getAll(),
+        ]);
+        setRequests(allReqs || []);
+        setTeams(allTeams || []);
+        setShelters(shelterList || []);
+      }
+    } catch {
+      setRequests([]);
+      setTeams([]);
+      setShelters([]);
+    }
   };
 
   useEffect(() => {
+    if (!profile) return;
     loadData();
     // WebSocket: cập nhật map khi SOS mới hoặc vị trí đội thay đổi
     wsService.connect();
@@ -175,7 +220,7 @@ export function MapPage() {
       unsubSos();
       unsubMap();
     };
-  }, []);
+  }, [profile?.role, profile?.id]);
 
 
   const getNearestTeamOrShelter = (req: RescueRequest) => {
@@ -209,6 +254,36 @@ export function MapPage() {
 
     return { position: closestPos, name: sourceName };
   };
+
+  const focusRouteEndpoints = useMemo(() => {
+    if (!focusRequestId) {
+      return { from: null as LatLngTuple | null, to: null as LatLngTuple | null, originName: "" };
+    }
+    const targetReq = requests.find((r) => r.requestId === Number(focusRequestId));
+    if (!targetReq?.latitude || !targetReq?.longitude) {
+      return { from: null, to: null, originName: "" };
+    }
+
+    const to: LatLngTuple = [targetReq.latitude, targetReq.longitude];
+    const team = teams.find((t) => t.teamId === targetReq.assignedTeamId);
+    if (team?.latitude && team?.longitude) {
+      return {
+        from: [team.latitude, team.longitude] as LatLngTuple,
+        to,
+        originName: `Đội phản ứng nhanh: ${team.teamName}`,
+      };
+    }
+    if (myLocation) {
+      return { from: myLocation, to, originName: "Vị trí GPS của bạn" };
+    }
+    const nearest = getNearestTeamOrShelter(targetReq);
+    if (nearest.position) {
+      return { from: nearest.position, to, originName: `${nearest.name} (Tài nguyên gần nhất)` };
+    }
+    return { from: null, to, originName: "" };
+  }, [focusRequestId, requests, teams, myLocation, shelters]);
+
+  const focusRoute = useDrivingRoute(focusRouteEndpoints.from, focusRouteEndpoints.to);
 
   const allPositions: [number, number][] = [
     ...(showRequests ? requests.filter(r => r.latitude && r.longitude).map(r => [r.latitude, r.longitude] as [number, number]) : []),
@@ -247,8 +322,15 @@ export function MapPage() {
 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold text-ink flex items-center gap-2">Bản đồ Giám sát Trực quan <span className="flex h-2 w-2 relative"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-error opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-error"></span></span></h1>
-          <p className="text-sm text-slate">Cập nhật thời gian thực vị trí cứu hộ, lộ trình tác chiến và điểm lánh nạn</p>
+          <h1 className="text-xl font-semibold text-ink flex items-center gap-2">
+            {isCitizen ? "Bản đồ cứu hộ của tôi" : "Bản đồ Giám sát Trực quan"}
+            <span className="flex h-2 w-2 relative"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-error opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-error"></span></span>
+          </h1>
+          <p className="text-sm text-slate">
+            {isCitizen
+              ? "Theo dõi ca SOS, đội đang đến cứu, lộ trình và điểm lánh nạn gần bạn"
+              : "Cập nhật thời gian thực vị trí cứu hộ, lộ trình tác chiến và điểm lánh nạn"}
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {isAdmin && (
@@ -264,12 +346,12 @@ export function MapPage() {
           <button onClick={() => setShowRequests(!showRequests)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors
               ${showRequests ? "bg-semantic-error/10 text-semantic-error font-bold" : "bg-surface text-slate border border-hairline hover:bg-surface-soft"}`}>
-            <LifeBuoy size={14} /> Cứu hộ
+            <LifeBuoy size={14} /> {isCitizen ? "Ca của tôi" : "Cứu hộ"}
           </button>
           <button onClick={() => setShowTeams(!showTeams)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors
               ${showTeams ? "bg-link/10 text-link font-bold" : "bg-surface text-slate border border-hairline hover:bg-surface-soft"}`}>
-            <Truck size={14} /> Đội cứu hộ
+            <Truck size={14} /> {isCitizen ? "Đội đang đến" : "Đội cứu hộ"}
           </button>
           <button onClick={() => setShowShelters(!showShelters)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors
@@ -283,6 +365,45 @@ export function MapPage() {
         </div>
       </div>
 
+      {/* Panel ca SOS — Citizen */}
+      {isCitizen && requests.length > 0 && (
+        <div className="card p-4 space-y-2">
+          <h3 className="text-sm font-semibold text-ink">Ca cứu hộ của bạn</h3>
+          <div className="flex flex-wrap gap-2">
+            {requests.map((r) => (
+              <button
+                key={r.requestId}
+                type="button"
+                onClick={() => {
+                  setSearchParams({ focusRequest: String(r.requestId) });
+                  if (r.latitude && r.longitude) {
+                    setFocusPosition([r.latitude, r.longitude]);
+                  }
+                }}
+                className={`text-left px-3 py-2 rounded-md border text-xs transition-colors ${
+                  focusRequestId === String(r.requestId)
+                    ? "border-primary bg-primary/10"
+                    : "border-hairline hover:bg-surface"
+                }`}
+              >
+                <span className="font-semibold text-ink">#{r.requestId}</span>
+                <span className="mx-1 text-slate">·</span>
+                <span className={statusBadge[r.status] || "badge-soft-purple"}>{r.status}</span>
+                {r.assignedTeamName && (
+                  <p className="text-slate mt-0.5">🚑 {r.assignedTeamName}</p>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {isCitizen && requests.length === 0 && (
+        <div className="card p-4 text-sm text-slate">
+          Chưa có ca cứu hộ. Vào <strong>Yêu cầu cứu hộ</strong> để gửi SOS.
+        </div>
+      )}
+
       <div className="card overflow-hidden relative" style={{ height: "calc(100vh - 200px)" }}>
         <MapContainer center={[16.047079, 108.206230]} zoom={6} className="h-full w-full">
           <TileLayer
@@ -292,6 +413,9 @@ export function MapPage() {
           <FitBounds positions={allPositions} disabled={myLocation !== null || focusPosition !== null} />
           <FlyToLocation position={myLocation} />
           <FlyToLocation position={focusPosition} />
+          {focusRoute.isRoadRoute && focusRoute.positions.length >= 2 && (
+            <FitRouteBounds positions={focusRoute.positions} />
+          )}
 
           {myLocation && (
             <Marker position={myLocation} icon={myLocationIcon}>
@@ -475,105 +599,79 @@ export function MapPage() {
             </Marker>
           ))}
 
-          {/* Lộ trình kết nối đội cứu hộ và ca SOS được phân công (Lộ trình thông thường) */}
+          {/* Lộ trình đội → ca SOS (theo đường lái xe OSRM) */}
           {showRequests && showTeams && requests
             .filter(r => r.latitude && r.longitude && r.assignedTeamId && (r.status === "IN_PROGRESS" || r.status === "ASSIGNED"))
             .filter(r => r.requestId !== Number(focusRequestId))
             .map(req => {
               const team = teams.find(t => t.teamId === req.assignedTeamId);
-              if (team && team.latitude && team.longitude) {
+              if (team?.latitude && team?.longitude) {
                 return (
-                  <Polyline
+                  <RoadRoutePolyline
                     key={`route-${req.requestId}-${team.teamId}`}
-                    positions={[[team.latitude, team.longitude], [req.latitude, req.longitude]]}
+                    from={[team.latitude, team.longitude]}
+                    to={[req.latitude, req.longitude]}
                     pathOptions={{
                       color: "#2563eb",
-                      weight: 3,
+                      weight: 4,
                       dashArray: "10, 10",
                       className: "animate-dash",
-                      opacity: 0.7
+                      opacity: 0.75,
                     }}
-                  >
-                    <Popup>
+                    popupContent={
                       <div className="text-xs p-1 font-sans">
-                        Đội <strong>{team.teamName}</strong> đang di chuyển đến cứu hộ ca SOS <strong>#{req.requestId}</strong>
+                        Đội <strong>{team.teamName}</strong> → ca SOS <strong>#{req.requestId}</strong> (theo đường)
                       </div>
-                    </Popup>
-                  </Polyline>
+                    }
+                  />
                 );
               }
               return null;
-            })
-          }
+            })}
 
-          {/* TIA ĐƯỜNG DẪN ĐƯỜNG CHỈ HUY ĐẶC BIỆT (SPECIAL GLOWING TACTICAL ROUTE RAY - 3 LAYER NEON LASER) */}
-          {(() => {
-            if (!focusRequestId) return null;
-            const targetReq = requests.find(r => r.requestId === Number(focusRequestId));
-            if (!targetReq || !targetReq.latitude || !targetReq.longitude) return null;
-
-            let originPos: [number, number] | null = null;
-            let originName = "";
-
-            const team = teams.find(t => t.teamId === targetReq.assignedTeamId);
-            if (team && team.latitude && team.longitude) {
-              originPos = [team.latitude, team.longitude];
-              originName = `Đội phản ứng nhanh: ${team.teamName}`;
-            } else if (myLocation) {
-              originPos = myLocation;
-              originName = "Vị trí GPS của bạn";
-            } else {
-              const nearest = getNearestTeamOrShelter(targetReq);
-              if (nearest.position) {
-                originPos = nearest.position;
-                originName = `${nearest.name} (Tài nguyên gần nhất)`;
-              }
-            }
-
-            if (!originPos) return null;
-
-            return (
-              <g key="focused-command-route">
-                {/* 1. Outer super thick high-contrast glowing neon red ray */}
-                <Polyline
-                  positions={[originPos, [targetReq.latitude, targetReq.longitude]]}
-                  pathOptions={{
-                    color: "#f43f5e",
-                    weight: 7,
-                    opacity: 0.95,
-                    lineCap: "round",
-                    lineJoin: "round"
-                  }}
-                />
-                {/* 2. Middle animated dashed ray representing action flow */}
-                <Polyline
-                  positions={[originPos, [targetReq.latitude, targetReq.longitude]]}
-                  pathOptions={{
-                    color: "#ffffff",
-                    weight: 5,
-                    dashArray: "12, 12",
-                    className: "animate-dash",
-                    opacity: 0.9
-                  }}
-                >
-                  <Popup>
-                    <div className="text-xs p-1 font-sans">
-                      Lộ trình dẫn đường từ <strong>{originName}</strong> đến ca SOS <strong>#{targetReq.requestId}</strong>
-                    </div>
-                  </Popup>
-                </Polyline>
-                {/* 3. Inner razor sharp solid light-pink core ray for professional GIS look */}
-                <Polyline
-                  positions={[originPos, [targetReq.latitude, targetReq.longitude]]}
-                  pathOptions={{
-                    color: "#ffe4e6",
-                    weight: 2,
-                    opacity: 1.0
-                  }}
-                />
-              </g>
-            );
-          })()}
+          {/* Lộ trình chỉ đường tác chiến (OSRM — uốn theo đường thực tế) */}
+          {focusRoute.positions.length >= 2 && (
+            <>
+              <Polyline
+                positions={focusRoute.positions}
+                pathOptions={{
+                  color: "#f43f5e",
+                  weight: 7,
+                  opacity: 0.95,
+                  lineCap: "round",
+                  lineJoin: "round",
+                }}
+              />
+              <Polyline
+                positions={focusRoute.positions}
+                pathOptions={{
+                  color: "#ffffff",
+                  weight: 5,
+                  dashArray: "12, 12",
+                  className: "animate-dash",
+                  opacity: 0.9,
+                }}
+              >
+                <Popup>
+                  <div className="text-xs p-1 font-sans">
+                    {focusRoute.isRoadRoute ? "Lộ trình lái xe" : "Lộ trình ước lượng"} từ{" "}
+                    <strong>{focusRouteEndpoints.originName}</strong> đến ca SOS{" "}
+                    <strong>#{focusRequestId}</strong>
+                    {focusRoute.distanceKm != null && (
+                      <>
+                        <br />
+                        ~{focusRoute.distanceKm} km · ~{focusRoute.durationMin} phút
+                      </>
+                    )}
+                  </div>
+                </Popup>
+              </Polyline>
+              <Polyline
+                positions={focusRoute.positions}
+                pathOptions={{ color: "#ffe4e6", weight: 2, opacity: 1 }}
+              />
+            </>
+          )}
 
           {/* Vùng nguy hiểm (Geo-fencing) */}
           {dangerZones.map((zone, idx) => (
@@ -626,6 +724,19 @@ export function MapPage() {
                   <span className="text-[11px] text-red-600 font-bold">👥 Cần cứu: {targetReq.numberOfPeople} người</span>
                   <span className="text-[10px] text-slate">Thời điểm: {targetReq.createdTime ? new Date(targetReq.createdTime).toLocaleTimeString("vi-VN", {hour: '2-digit', minute:'2-digit'}) : "N/A"}</span>
                 </div>
+                {focusRoute.loading && (
+                  <p className="text-[11px] text-primary font-medium flex items-center gap-1">
+                    <Clock size={12} className="animate-spin" /> Đang tính lộ trình theo đường...
+                  </p>
+                )}
+                {!focusRoute.loading && focusRoute.isRoadRoute && focusRoute.distanceKm != null && (
+                  <p className="text-[11px] text-emerald-700 font-semibold bg-emerald-50 px-2 py-1 rounded border border-emerald-100">
+                    🛣️ ~{focusRoute.distanceKm} km · ~{focusRoute.durationMin} phút (đường lái xe)
+                  </p>
+                )}
+                {!focusRoute.loading && !focusRoute.isRoadRoute && focusRouteEndpoints.from && (
+                  <p className="text-[11px] text-amber-700">Đường thẳng (OSRM tạm không phản hồi)</p>
+                )}
                 {(() => {
                   const team = teams.find(t => t.teamId === targetReq.assignedTeamId);
                   if (team) {

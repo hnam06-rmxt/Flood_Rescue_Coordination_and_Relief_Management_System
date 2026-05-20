@@ -63,6 +63,27 @@ function DashboardRoute({ children, allowedRoles }: { children: ReactElement; al
   );
 }
 
+function HomeRedirect() {
+  const profile = useUserStore((s) => s.profile);
+  const status = useUserStore((s) => s.status);
+  if (status === "loading" || status === "idle") {
+    return <Navigate replace to="/map" />;
+  }
+  if (profile?.role === "CITIZEN" || profile?.role === "RESCUER") {
+    return <Navigate replace to="/map" />;
+  }
+  if (profile?.role === "ADMIN" || profile?.role === "MANAGER" || profile?.role === "COORDINATOR") {
+    return <Navigate replace to="/dashboard" />;
+  }
+  return <Navigate replace to="/map" />;
+}
+
+function AuthFallbackRedirect() {
+  const isAuthenticated = useAuthStore((s) => s.accessToken.length > 0);
+  if (!isAuthenticated) return <Navigate replace to="/login" />;
+  return <HomeRedirect />;
+}
+
 export default function App() {
   const isAuthenticated = useAuthStore((state) => state.accessToken.length > 0);
 
@@ -72,7 +93,7 @@ export default function App() {
       return;
     }
     userActions.loadMyProfile().catch((error) => {
-      if (error && (error.status === 401 || error.status === 403)) {
+      if (error && error.status === 401) {
         authActions.logout();
       }
     });
@@ -80,7 +101,7 @@ export default function App() {
 
   return (
     <Routes>
-      <Route path="/" element={<Navigate replace to="/dashboard" />} />
+      <Route path="/" element={<HomeRedirect />} />
       <Route path="/login" element={<PublicOnlyRoute><LoginPage /></PublicOnlyRoute>} />
       <Route path="/register" element={<PublicOnlyRoute><RegisterPage /></PublicOnlyRoute>} />
 
@@ -98,7 +119,7 @@ export default function App() {
       <Route path="/settings" element={<DashboardRoute allowedRoles={["ADMIN"]}><SettingsPage /></DashboardRoute>} />
       <Route path="/profile" element={<DashboardRoute><ProfilePage /></DashboardRoute>} />
 
-      <Route path="*" element={<Navigate replace to={isAuthenticated ? "/dashboard" : "/login"} />} />
+      <Route path="*" element={<AuthFallbackRedirect />} />
     </Routes>
   );
 }

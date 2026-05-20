@@ -28,17 +28,6 @@ function LocationPicker({ position, setPosition }: { position: [number, number],
   return <Marker position={position} />;
 }
 
-function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const R = 6371; // Bán kính trái đất (km)
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLon/2) * Math.sin(dLon/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  return R * c;
-}
-
 const urgencyBadge: Record<string, string> = { 
   CRITICAL: "badge-red", 
   HIGH: "badge-orange", 
@@ -111,6 +100,18 @@ export function RescueRequestsPage() {
       return () => unsub();
     }
   }, [isCitizen, isStaff]);
+
+  useEffect(() => {
+    if (!showAssignModal) {
+      setNearbyTeams([]);
+      return;
+    }
+    setNearbyLoading(true);
+    rescueApi.getNearbyTeams(showAssignModal)
+      .then((data) => setNearbyTeams(data || []))
+      .catch(() => setNearbyTeams([]))
+      .finally(() => setNearbyLoading(false));
+  }, [showAssignModal]);
 
   async function load() {
     setLoading(true);
@@ -688,7 +689,7 @@ export function RescueRequestsPage() {
               {!nearbyLoading && nearbyTeams.map((t, index) => (
                 <button key={t.teamId} onClick={() => handleAssign(showAssignModal, t.teamId)}
                   className={`flex items-center justify-between w-full p-3 rounded-md border transition-colors ${
-                    index === 0 ? 'border-primary bg-primary/5 hover:bg-primary/10' : 'border-hairline hover:bg-surface'
+                    index < 3 ? 'border-primary bg-primary/5 hover:bg-primary/10' : 'border-hairline hover:bg-surface'
                   }`}>
                   <div className="text-left">
                     <p className="text-sm font-medium text-ink flex items-center gap-2">
@@ -696,8 +697,11 @@ export function RescueRequestsPage() {
                       {index === 0 && <span className="badge-green !py-0.5 !px-1.5 !text-[9px]">Gần nhất</span>}
                     </p>
                     <p className="text-xs text-slate">{t.memberCount} thành viên · {t.contactPhone}</p>
+                    {t.teamLeaderName && (
+                      <p className="text-xs text-slate">Trưởng đội: {t.teamLeaderName}</p>
+                    )}
                     <p className="text-xs text-primary font-medium mt-0.5 flex items-center gap-1">
-                      <MapPin size={12}/> {t.distanceDisplay}
+                      <MapPin size={12}/> {t.distanceDisplay || `~${t.distanceKm} km`}
                     </p>
                     {t.vehicleNames && t.vehicleNames.length > 0 && (
                       <p className="text-[10px] text-brand-teal font-medium mt-1">

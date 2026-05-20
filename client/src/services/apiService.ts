@@ -43,6 +43,7 @@ export const uploadApi = {
 // ─── Teams ───
 export const teamApi = {
   getAll: () => http.get<ApiResponse<RescueTeam[]>>("/rescue-teams").then(r => r.data.data),
+  getAssignedToMe: () => http.get<ApiResponse<RescueTeam[]>>("/rescue-teams/assigned-to-me").then(r => r.data.data),
   getById: (id: number) => http.get<ApiResponse<RescueTeam>>(`/rescue-teams/${id}`).then(r => r.data.data),
   create: (d: Partial<RescueTeam>) => http.post<ApiResponse<RescueTeam>>("/rescue-teams", d).then(r => r.data.data),
   update: (id: number, d: Partial<RescueTeam>) => http.put<ApiResponse<RescueTeam>>(`/rescue-teams/${id}`, d).then(r => r.data.data),

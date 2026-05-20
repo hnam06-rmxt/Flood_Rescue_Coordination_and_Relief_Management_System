@@ -79,6 +79,14 @@ const myLocationIcon = L.divIcon({
   popupAnchor: [0, -20]
 });
 
+const statusBadge: Record<string, string> = {
+  PENDING: "badge-orange",
+  ASSIGNED: "badge-blue",
+  IN_PROGRESS: "badge-purple",
+  COMPLETED: "badge-green",
+  CANCELLED: "badge-red",
+};
+
 function FitBounds({ positions, disabled }: { positions: [number, number][], disabled?: boolean }) {
   const map = useMap();
   useEffect(() => {
@@ -125,6 +133,7 @@ function MapDrawHandler({ isDrawing, onAddPoint, onFinish }: any) {
 
 export function MapPage() {
   const profile = useUserStore(s => s.profile);
+  const isCitizen = profile?.role === "CITIZEN";
   const isAdmin = profile?.role === "ADMIN" || profile?.role === "COORDINATOR";
   const [searchParams, setSearchParams] = useSearchParams();
   const focusRequestId = searchParams.get("focusRequest");
@@ -167,17 +176,40 @@ export function MapPage() {
     );
   };
 
-  const loadData = () => {
-    rescueApi.getAll().then(setRequests).catch(() => {});
-    shelterApi.getAll().then(setShelters).catch(() => {});
-    teamApi.getAll().then(setTeams).catch(() => {});
+  const loadData = async () => {
+    try {
+      if (isCitizen) {
+        const [myReqs, assignedTeams, shelterList] = await Promise.all([
+          rescueApi.getMyRequests(),
+          teamApi.getAssignedToMe().catch(() => [] as RescueTeam[]),
+          shelterApi.getAll(),
+        ]);
+        setRequests(myReqs || []);
+        setTeams(assignedTeams || []);
+        setShelters(shelterList || []);
+      } else {
+        const [allReqs, allTeams, shelterList] = await Promise.all([
+          rescueApi.getAll(),
+          teamApi.getAll(),
+          shelterApi.getAll(),
+        ]);
+        setRequests(allReqs || []);
+        setTeams(allTeams || []);
+        setShelters(shelterList || []);
+      }
+    } catch {
+      setRequests([]);
+      setTeams([]);
+      setShelters([]);
+    }
   };
 
   useEffect(() => {
+    if (!profile) return;
     loadData();
-    const interval = setInterval(loadData, 10000); // Tự động refresh mỗi 10s (Live Dashboard)
+    const interval = setInterval(loadData, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [profile?.role, profile?.id]);
 
   const getNearestTeamOrShelter = (req: RescueRequest) => {
     let closestPos: [number, number] | null = null;
@@ -278,8 +310,15 @@ export function MapPage() {
 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold text-ink flex items-center gap-2">Bản đồ Giám sát Trực quan <span className="flex h-2 w-2 relative"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-error opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-error"></span></span></h1>
-          <p className="text-sm text-slate">Cập nhật thời gian thực vị trí cứu hộ, lộ trình tác chiến và điểm lánh nạn</p>
+          <h1 className="text-xl font-semibold text-ink flex items-center gap-2">
+            {isCitizen ? "Bản đồ cứu hộ của tôi" : "Bản đồ Giám sát Trực quan"}
+            <span className="flex h-2 w-2 relative"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-error opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-error"></span></span>
+          </h1>
+          <p className="text-sm text-slate">
+            {isCitizen
+              ? "Theo dõi ca SOS, đội đang đến cứu, lộ trình và điểm lánh nạn gần bạn"
+              : "Cập nhật thời gian thực vị trí cứu hộ, lộ trình tác chiến và điểm lánh nạn"}
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {isAdmin && (
@@ -295,12 +334,12 @@ export function MapPage() {
           <button onClick={() => setShowRequests(!showRequests)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors
               ${showRequests ? "bg-semantic-error/10 text-semantic-error font-bold" : "bg-surface text-slate border border-hairline hover:bg-surface-soft"}`}>
-            <LifeBuoy size={14} /> Cứu hộ
+            <LifeBuoy size={14} /> {isCitizen ? "Ca của tôi" : "Cứu hộ"}
           </button>
           <button onClick={() => setShowTeams(!showTeams)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors
               ${showTeams ? "bg-link/10 text-link font-bold" : "bg-surface text-slate border border-hairline hover:bg-surface-soft"}`}>
-            <Truck size={14} /> Đội cứu hộ
+            <Truck size={14} /> {isCitizen ? "Đội đang đến" : "Đội cứu hộ"}
           </button>
           <button onClick={() => setShowShelters(!showShelters)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors
@@ -313,6 +352,45 @@ export function MapPage() {
           </button>
         </div>
       </div>
+
+      {/* Panel ca SOS — Citizen */}
+      {isCitizen && requests.length > 0 && (
+        <div className="card p-4 space-y-2">
+          <h3 className="text-sm font-semibold text-ink">Ca cứu hộ của bạn</h3>
+          <div className="flex flex-wrap gap-2">
+            {requests.map((r) => (
+              <button
+                key={r.requestId}
+                type="button"
+                onClick={() => {
+                  setSearchParams({ focusRequest: String(r.requestId) });
+                  if (r.latitude && r.longitude) {
+                    setFocusPosition([r.latitude, r.longitude]);
+                  }
+                }}
+                className={`text-left px-3 py-2 rounded-md border text-xs transition-colors ${
+                  focusRequestId === String(r.requestId)
+                    ? "border-primary bg-primary/10"
+                    : "border-hairline hover:bg-surface"
+                }`}
+              >
+                <span className="font-semibold text-ink">#{r.requestId}</span>
+                <span className="mx-1 text-slate">·</span>
+                <span className={statusBadge[r.status] || "badge-soft-purple"}>{r.status}</span>
+                {r.assignedTeamName && (
+                  <p className="text-slate mt-0.5">🚑 {r.assignedTeamName}</p>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {isCitizen && requests.length === 0 && (
+        <div className="card p-4 text-sm text-slate">
+          Chưa có ca cứu hộ. Vào <strong>Yêu cầu cứu hộ</strong> để gửi SOS.
+        </div>
+      )}
 
       <div className="card overflow-hidden relative" style={{ height: "calc(100vh - 200px)" }}>
         <MapContainer center={[16.047079, 108.206230]} zoom={6} className="h-full w-full">

@@ -1,9 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Search, MapPin, CheckCircle, ArrowRight, UserPlus, XCircle, Navigation, Radio, HeartHandshake, Eye, UserCheck, Map } from "lucide-react";
+import { Plus, Search, MapPin, CheckCircle, ArrowRight, UserPlus, XCircle, Navigation, Radio, HeartHandshake, Eye, UserCheck, Map, ShieldCheck, ShieldX, Gift, ImagePlus } from "lucide-react";
+
 import { rescueApi, teamApi, uploadApi } from "../services/apiService";
 import { useUserStore } from "../hooks/useUserStore";
-import type { RescueRequest, CreateRescueRequest, RescueTeam } from "../types/rescue";
+import { wsService } from "../lib/websocket";
+import type { RescueRequest, CreateRescueRequest, RescueTeam, NearbyTeamSuggestion } from "../types/rescue";
 
 import { MapContainer, TileLayer, Marker, useMapEvents } from "react-leaflet";
 import L from "leaflet";
@@ -45,10 +47,23 @@ const urgencyBadge: Record<string, string> = {
 };
 const statusBadge: Record<string, string> = { 
   PENDING: "badge-orange", 
+  VERIFIED: "badge-blue",
   ASSIGNED: "badge-blue", 
   IN_PROGRESS: "badge-purple", 
   COMPLETED: "badge-green", 
-  CANCELLED: "badge-red" 
+  RELIEF_RECEIVED: "badge-green",
+  CANCELLED: "badge-red",
+  REJECTED: "badge-red"
+};
+const statusLabel: Record<string, string> = {
+  PENDING: "Chờ xác minh",
+  VERIFIED: "Đã xác minh",
+  ASSIGNED: "Đã phân công",
+  IN_PROGRESS: "Đang cứu hộ",
+  COMPLETED: "Hoàn thành",
+  RELIEF_RECEIVED: "Đã nhận cứu trợ",
+  CANCELLED: "Đã hủy",
+  REJECTED: "Bị từ chối",
 };
 
 export function RescueRequestsPage() {
@@ -65,26 +80,56 @@ export function RescueRequestsPage() {
   const [filterStatus, setFilterStatus] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState<number | null>(null);
+  const [nearbyTeams, setNearbyTeams] = useState<NearbyTeamSuggestion[]>([]);
+  const [nearbyLoading, setNearbyLoading] = useState(false);
+  // Completion modal
+  const [completionModal, setCompletionModal] = useState<{ id: number } | null>(null);
+  const [completionNotes, setCompletionNotes] = useState("");
+  const [completionFiles, setCompletionFiles] = useState<File[]>([]);
+  const [completionPreviews, setCompletionPreviews] = useState<string[]>([]);
+  const [completionUploading, setCompletionUploading] = useState(false);
   const [form, setForm] = useState<CreateRescueRequest>({ description: "", location: "", latitude: 0, longitude: 0, urgencyLevel: "MEDIUM", image: "", numberOfPeople: 1 });
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [imagePreviewUrls, setImagePreviewUrls] = useState<string[]>([]);
   const [uploadingImages, setUploadingImages] = useState(false);
   const [sosActive, setSosActive] = useState<Record<number, boolean>>({});
-  const [teamLocationActive, setTeamLocationActive] = useState(false); // FR-3.3 Auto tracking
+  const [teamLocationActive, setTeamLocationActive] = useState(false);
   const [loading, setLoading] = useState(true);
   const [selectedRequestDetails, setSelectedRequestDetails] = useState<RescueRequest | null>(null);
   const [updateLocationModal, setUpdateLocationModal] = useState<{ id: number, lat: number, lng: number } | null>(null);
+  const wsInitialized = useRef(false);
 
   useEffect(() => { 
     load(); 
     teamApi.getAll().then(setTeams).catch(() => {});
+    // WebSocket: subscribe to SOS updates for real-time refresh
+    if (!wsInitialized.current) {
+      wsInitialized.current = true;
+      const unsub = wsService.subscribe("/topic/sos-updates", () => {
+        load();
+      });
+      return () => unsub();
+    }
   }, [isCitizen, isStaff]);
 
   async function load() {
     setLoading(true);
     try {
-      const data = isCitizen ? await rescueApi.getMyRequests() : await rescueApi.getAll();
-      console.log("Rescue requests data:", data);
+      let data: RescueRequest[];
+      if (isCitizen) {
+        data = await rescueApi.getMyRequests();
+      } else if (isRescuer) {
+        // FR-fix: Rescuer chỉ xem ca của đội mình
+        const allTeams = await teamApi.getAll();
+        const myTeam = allTeams.find(t => t.teamLeaderId === profile?.id);
+        if (myTeam) {
+          data = await rescueApi.getByTeam(myTeam.teamId);
+        } else {
+          data = await rescueApi.getAll();
+        }
+      } else {
+        data = await rescueApi.getAll();
+      }
       setRequests(data || []);
     } catch (err) { 
       console.error("Load requests failed:", err);
@@ -149,13 +194,54 @@ export function RescueRequestsPage() {
   }
 
   async function updateStatus(id: number, status: string) {
-    if (!confirm(`Xác nhận chuyển trạng thái sang ${status}?`)) return;
+    if (!confirm(`Xác nhận chuyển trạng thái sang ${statusLabel[status] || status}?`)) return;
     try { 
       await rescueApi.updateStatus(id, status); 
       load(); 
     } catch (err) {
       console.error("Update status failed:", err);
       alert("Cập nhật trạng thái thất bại. Vui lòng kiểm tra lại.");
+    }
+  }
+
+  async function handleVerify(id: number) {
+    if (!confirm("Xác minh yêu cầu SOS này là hợp lệ?")) return;
+    try { await rescueApi.verifyRequest(id); load(); }
+    catch { alert("Xác minh thất bại."); }
+  }
+
+  async function handleReject(id: number) {
+    if (!confirm("Từ chối SOS này? Hành động này không thể hoàn tác.")) return;
+    try { await rescueApi.updateStatus(id, "REJECTED"); load(); }
+    catch { alert("Từ chối thất bại."); }
+  }
+
+  async function handleMarkReliefReceived(id: number) {
+    if (!confirm("Đảm bảo bạn đã nhận được hàng cứu trợ?")) return;
+    try { await rescueApi.markReliefReceived(id); load(); }
+    catch { alert("Xác nhận thất bại."); }
+  }
+
+  async function handleCompletionConfirm() {
+    if (!completionModal) return;
+    setCompletionUploading(true);
+    try {
+      let proofImageUrl = "";
+      if (completionFiles.length > 0) {
+        // Upload ảnh lên server trước
+        const uploaded = await uploadApi.uploadImages(completionFiles, "rescue-proof");
+        proofImageUrl = uploaded?.joinedUrls || uploaded?.urls?.join("|||") || "";
+      }
+      await rescueApi.updateStatus(completionModal.id, "COMPLETED", completionNotes, proofImageUrl);
+      setCompletionModal(null);
+      setCompletionNotes("");
+      setCompletionFiles([]);
+      setCompletionPreviews([]);
+      load();
+    } catch {
+      alert("Hoàn thành thất bại, vui lòng thử lại.");
+    } finally {
+      setCompletionUploading(false);
     }
   }
 
@@ -258,11 +344,26 @@ export function RescueRequestsPage() {
   async function handleAssign(requestId: number, teamId: number) {
     try { 
       await rescueApi.assignTeam(requestId, teamId); 
-      setShowAssignModal(null); 
+      setShowAssignModal(null);
+      setNearbyTeams([]);
       load(); 
     } catch (err) {
       console.error("Assign team failed:", err);
       alert("Phân công đội thất bại.");
+    }
+  }
+
+  async function openAssignModal(requestId: number) {
+    setShowAssignModal(requestId);
+    setNearbyLoading(true);
+    try {
+      const suggestions = await rescueApi.getNearbyTeams(requestId);
+      setNearbyTeams(suggestions || []);
+    } catch {
+      // Fallback to all ACTIVE teams sorted by distance client-side
+      setNearbyTeams([]);
+    } finally {
+      setNearbyLoading(false);
     }
   }
 
@@ -470,11 +571,27 @@ export function RescueRequestsPage() {
                           <HeartHandshake size={14} /> Đã cứu
                         </button>
                       )}
-                      {isAdmin && req.status === "PENDING" && (
-                         <button onClick={() => setShowAssignModal(r.requestId)} 
-                          className="btn-secondary !py-1 !px-2 text-xs border-primary text-primary hover:bg-tint-lavender">
+                      {isAdmin && ["PENDING", "VERIFIED"].includes(req.status) && (
+                         <button onClick={() => openAssignModal(r.requestId)} 
+                          className="btn-secondary !py-1 !px-2 text-xs border-primary text-primary hover:bg-tint-lavender"
+                          title="Điều phối đội cứu hộ">
                           <UserPlus size={14} /> Điều phối
                         </button>
+                      )}
+                      {/* Coordinator: Verify / Reject PENDING */}
+                      {isAdmin && req.status === "PENDING" && (
+                        <>
+                          <button onClick={() => handleVerify(r.requestId)}
+                            className="btn-secondary !py-1 !px-2 text-xs border-emerald-600 text-emerald-700 hover:bg-emerald-50 flex items-center gap-1"
+                            title="Xác minh SOS hợp lệ">
+                            <ShieldCheck size={14} /> Xác minh
+                          </button>
+                          <button onClick={() => handleReject(r.requestId)}
+                            className="btn-secondary !py-1 !px-2 text-xs border-error text-error hover:bg-tint-rose flex items-center gap-1"
+                            title="Từ chối SOS giả">
+                            <ShieldX size={14} /> Từ chối
+                          </button>
+                        </>
                       )}
                       {isStaff && req.status === "ASSIGNED" && (
                         <>
@@ -492,11 +609,21 @@ export function RescueRequestsPage() {
                       )}
                       {isStaff && req.status === "IN_PROGRESS" && (
                         <button onClick={() => {
-                          prompt("Bạn đã cứu hộ thành công! Vui lòng dán link hình ảnh minh chứng (nếu có):");
-                          updateStatus(r.requestId, "COMPLETED");
-                        }} 
-                          className="btn-primary !py-1 !px-2 text-xs !bg-brand-green">
+                          setCompletionModal({ id: r.requestId });
+                          setCompletionNotes("");
+                          setCompletionFiles([]);
+                          setCompletionPreviews([]);
+                        }}
+                          className="btn-primary !py-1 !px-2 text-xs !bg-brand-green flex items-center gap-1">
                           <CheckCircle size={14} /> Hoàn thành
+                        </button>
+                      )}
+                      {/* Citizen: Đã nhận cứu trợ */}
+                      {isCitizen && ["COMPLETED", "IN_PROGRESS"].includes(r.status) && (
+                        <button onClick={() => handleMarkReliefReceived(r.requestId)}
+                          className="btn-primary !py-1 !px-2 text-xs !bg-emerald-600 flex items-center gap-1"
+                          title="Xác nhận đã nhận hàng cứu trợ">
+                          <Gift size={14} /> Đã nhận cứu trợ
                         </button>
                       )}
                       {(isStaff || isCitizen) && ["PENDING", "ASSIGNED"].includes(req.status) && (
@@ -531,51 +658,140 @@ export function RescueRequestsPage() {
         </div>
       </div>
 
-      {/* Assign Modal */}
+      {/* Assign Modal - dùng Redis Geo API */}
       {showAssignModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
           <div className="card w-full max-w-md p-6 animate-fade-in">
-            <h3 className="text-lg font-semibold text-ink mb-2">Điều phối đội cứu hộ</h3>
-            <p className="text-xs text-slate mb-4">Hệ thống tính toán không gian và gợi ý các đội rảnh gần nhất.</p>
-            <div className="space-y-2 max-h-60 overflow-y-auto">
-              {(() => {
-                const targetReq = requests.find(r => r.requestId === showAssignModal);
-                const available = teams.filter(t => t.status === "ACTIVE").map(team => {
-                  let distance = 99999;
-                  if (targetReq?.latitude && targetReq?.longitude && team.latitude && team.longitude) {
-                    distance = calculateDistance(targetReq.latitude, targetReq.longitude, team.latitude, team.longitude);
-                  }
-                  return { ...team, distance };
-                }).sort((a, b) => a.distance - b.distance);
-
-                if (available.length === 0) return <p className="text-sm text-slate py-4">Không có đội nào đang rảnh (ACTIVE)</p>;
-                return available.map((t, index) => (
-                  <button key={t.teamId} onClick={() => handleAssign(showAssignModal, t.teamId)}
-                    className={`flex items-center justify-between w-full p-3 rounded-md border transition-colors ${index < 3 ? 'border-primary bg-primary/5 hover:bg-primary/10' : 'border-hairline hover:bg-surface'}`}>
-                    <div className="text-left">
-                      <p className="text-sm font-medium text-ink flex items-center gap-2">
-                        {t.teamName} 
-                        {index === 0 && t.distance < 99999 && <span className="badge-green !py-0.5 !px-1.5 !text-[9px]">Gần nhất</span>}
+            <h3 className="text-lg font-semibold text-ink mb-1">Điều phối đội cứu hộ</h3>
+            <p className="text-xs text-slate mb-4">
+              {nearbyLoading ? "Đang tìm đội gần nhất qua Redis Geo..." : `Gợi ý ${nearbyTeams.length} đội có sẵn gần nhất`}
+            </p>
+            <div className="space-y-2 max-h-72 overflow-y-auto">
+              {nearbyLoading && (
+                <div className="py-6 text-center text-slate text-sm animate-pulse">Đang tìm kiếm...</div>
+              )}
+              {!nearbyLoading && nearbyTeams.length === 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-md">Không có đội nào gần trong bán kính tìm kiếm. Hiển thị tất cả đội ACTIVE:</p>
+                  {teams.filter(t => t.status === "ACTIVE").map((t) => (
+                    <button key={t.teamId} onClick={() => handleAssign(showAssignModal, t.teamId)}
+                      className="flex items-center justify-between w-full p-3 rounded-md border border-hairline hover:bg-surface transition-colors">
+                      <div className="text-left">
+                        <p className="text-sm font-medium text-ink">{t.teamName}</p>
+                        <p className="text-xs text-slate">{t.memberCount} thành viên · {t.contactPhone}</p>
+                      </div>
+                      <ArrowRight size={14} className="text-slate shrink-0" />
+                    </button>
+                  ))}
+                </div>
+              )}
+              {!nearbyLoading && nearbyTeams.map((t, index) => (
+                <button key={t.teamId} onClick={() => handleAssign(showAssignModal, t.teamId)}
+                  className={`flex items-center justify-between w-full p-3 rounded-md border transition-colors ${
+                    index === 0 ? 'border-primary bg-primary/5 hover:bg-primary/10' : 'border-hairline hover:bg-surface'
+                  }`}>
+                  <div className="text-left">
+                    <p className="text-sm font-medium text-ink flex items-center gap-2">
+                      {t.teamName}
+                      {index === 0 && <span className="badge-green !py-0.5 !px-1.5 !text-[9px]">Gần nhất</span>}
+                    </p>
+                    <p className="text-xs text-slate">{t.memberCount} thành viên · {t.contactPhone}</p>
+                    <p className="text-xs text-primary font-medium mt-0.5 flex items-center gap-1">
+                      <MapPin size={12}/> {t.distanceDisplay}
+                    </p>
+                    {t.vehicleNames && t.vehicleNames.length > 0 && (
+                      <p className="text-[10px] text-brand-teal font-medium mt-1">
+                        🚛 {t.vehicleNames.join(", ")}
                       </p>
-                      <p className="text-xs text-slate">{t.memberCount} thành viên · {t.contactPhone}</p>
-                      {t.distance < 99999 && (
-                        <p className="text-xs text-primary font-medium mt-0.5 flex items-center gap-1">
-                          <MapPin size={12}/> Cách ~{t.distance.toFixed(1)} km
-                        </p>
-                      )}
-                      {t.vehicleNames && t.vehicleNames.length > 0 && (
-                        <p className="text-[10px] text-brand-teal font-medium mt-1">
-                          🚛 {t.vehicleNames.join(", ")}
-                        </p>
-                      )}
-                    </div>
-                    <ArrowRight size={14} className="text-slate shrink-0" />
-                  </button>
-                ));
-              })()}
+                    )}
+                  </div>
+                  <ArrowRight size={14} className="text-slate shrink-0" />
+                </button>
+              ))}
             </div>
             <div className="mt-6">
-              <button onClick={() => setShowAssignModal(null)} className="btn-secondary w-full">Đóng</button>
+              <button onClick={() => { setShowAssignModal(null); setNearbyTeams([]); }} className="btn-secondary w-full">Đóng</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Completion Modal - upload ảnh minh chứng thực sự */}
+      {completionModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <div className="card w-full max-w-md p-6 animate-fade-in">
+            <h3 className="text-base font-semibold text-ink mb-4 flex items-center gap-2">
+              <CheckCircle size={18} className="text-brand-green" /> Báo cáo hoàn thành cứu hộ
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-ink mb-1">Ghi chú kết quả</label>
+                <textarea
+                  className="input-field h-20 resize-none"
+                  placeholder="Mô tả tình trạng sau cứu hộ, số người được cứu..."
+                  value={completionNotes}
+                  onChange={e => setCompletionNotes(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-ink mb-1">
+                  Ảnh minh chứng
+                  <span className="text-xs text-slate font-normal ml-1">(tùy chọn, tối đa 5 ảnh)</span>
+                </label>
+                <label className="flex items-center justify-center gap-2 w-full border-2 border-dashed border-hairline rounded-lg p-4 cursor-pointer hover:border-primary hover:bg-tint-lavender transition-colors">
+                  <ImagePlus size={18} className="text-slate" />
+                  <span className="text-sm text-slate">Chọn ảnh từ thiết bị</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={e => {
+                      const files = Array.from(e.target.files || []).slice(0, 5);
+                      setCompletionFiles(files);
+                      setCompletionPreviews(files.map(f => URL.createObjectURL(f)));
+                    }}
+                  />
+                </label>
+                {completionPreviews.length > 0 && (
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    {completionPreviews.map((url, i) => (
+                      <div key={i} className="relative group">
+                        <img src={url} alt={`Ảnh ${i+1}`} className="w-full h-20 object-cover rounded border border-hairline" />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = completionFiles.filter((_, idx) => idx !== i);
+                            setCompletionFiles(next);
+                            setCompletionPreviews(next.map(f => URL.createObjectURL(f)));
+                          }}
+                          className="absolute -top-1.5 -right-1.5 bg-error text-white rounded-full p-0.5 shadow opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <XCircle size={13} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="flex gap-2 mt-5">
+              <button
+                onClick={() => { setCompletionModal(null); setCompletionFiles([]); setCompletionPreviews([]); }}
+                className="btn-secondary flex-1"
+                disabled={completionUploading}
+              >Hủy</button>
+              <button
+                onClick={handleCompletionConfirm}
+                className="btn-primary flex-1 !bg-brand-green flex items-center justify-center gap-1"
+                disabled={completionUploading}
+              >
+                {completionUploading ? (
+                  <><span className="animate-spin inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full" /> Đang tải ảnh...</>
+                ) : (
+                  <><CheckCircle size={14} /> Xác nhận hoàn thành</>
+                )}
+              </button>
             </div>
           </div>
         </div>

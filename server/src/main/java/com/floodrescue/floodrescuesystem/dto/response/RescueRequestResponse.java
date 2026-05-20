@@ -22,6 +22,7 @@ public class RescueRequestResponse {
     private Long assignedTeamId;
     private String assignedTeamName;
     private String notes;
+    private String proofImageUrl;
 
     public RescueRequestResponse() {}
 
@@ -170,5 +171,13 @@ public class RescueRequestResponse {
 
     public void setNotes(String notes) {
         this.notes = notes;
+    }
+
+    public String getProofImageUrl() {
+        return proofImageUrl;
+    }
+
+    public void setProofImageUrl(String proofImageUrl) {
+        this.proofImageUrl = proofImageUrl;
     }
 }

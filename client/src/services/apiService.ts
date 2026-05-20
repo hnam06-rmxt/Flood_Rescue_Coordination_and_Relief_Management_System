@@ -4,6 +4,7 @@ import type {
   RescueRequest, CreateRescueRequest, RescueTeam, RescueVehicle,
   ReliefItem, ReliefDistribution, Shelter, FloodAlert,
   Notification, DashboardStats, NearbyTeamSuggestion,
+  VehicleUsageLog, SystemSetting,
 } from "../types/rescue";
 import type { UserProfile } from "../types/user";
 
@@ -16,11 +17,14 @@ export const rescueApi = {
   getByTeam: (id: number) => http.get<ApiResponse<RescueRequest[]>>(`/rescue-requests/team/${id}`).then(r => r.data.data),
   create: (d: CreateRescueRequest) => http.post<ApiResponse<RescueRequest>>("/rescue-requests", d).then(r => r.data.data),
   update: (id: number, d: CreateRescueRequest) => http.put<ApiResponse<RescueRequest>>(`/rescue-requests/${id}`, d).then(r => r.data.data),
-  updateStatus: (id: number, status: string) => http.patch<ApiResponse<RescueRequest>>(`/rescue-requests/${id}/status`, { status }).then(r => r.data.data),
+  updateStatus: (id: number, status: string, notes?: string, proofImageUrl?: string) =>
+    http.patch<ApiResponse<RescueRequest>>(`/rescue-requests/${id}/status`, { status, notes, proofImageUrl }).then(r => r.data.data),
   updateUrgency: (id: number, urgency: string) => http.patch<ApiResponse<RescueRequest>>(`/rescue-requests/${id}/urgency`, { status: urgency }).then(r => r.data.data),
   getNearbyTeams: (id: number) => http.get<ApiResponse<NearbyTeamSuggestion[]>>(`/rescue-requests/${id}/nearby-teams`).then(r => r.data.data),
   assignTeam: (id: number, teamId: number) => http.patch<ApiResponse<RescueRequest>>(`/rescue-requests/${id}/assign`, { teamId }).then(r => r.data.data),
   confirmRescued: (id: number) => http.patch<ApiResponse<RescueRequest>>(`/rescue-requests/${id}/confirm-rescued`).then(r => r.data.data),
+  markReliefReceived: (id: number) => http.patch<ApiResponse<RescueRequest>>(`/rescue-requests/${id}/relief-received`).then(r => r.data.data),
+  verifyRequest: (id: number, notes?: string) => http.patch<ApiResponse<RescueRequest>>(`/rescue-requests/${id}/verify`, { notes }).then(r => r.data.data),
   updateLocation: (id: number, location: {latitude: number, longitude: number}) => http.patch<ApiResponse<RescueRequest>>(`/rescue-requests/${id}/location`, location).then(r => r.data.data),
   delete: (id: number) => http.delete<ApiResponse<void>>(`/rescue-requests/${id}`),
 };
@@ -30,7 +34,6 @@ export const uploadApi = {
     const formData = new FormData();
     files.forEach(file => formData.append("files", file));
     formData.append("folder", folder);
-
     return http.post<ApiResponse<{ urls: string[]; joinedUrls: string }>>("/uploads/images", formData, {
       headers: { "Content-Type": "multipart/form-data" },
     }).then(r => r.data.data);
@@ -57,6 +60,8 @@ export const vehicleApi = {
   updateStatus: (id: number, status: string) => http.patch<ApiResponse<RescueVehicle>>(`/vehicles/${id}/status`, { status }).then(r => r.data.data),
   assignTeam: (vehicleId: number, teamId: number) => http.patch<ApiResponse<RescueVehicle>>(`/vehicles/${vehicleId}/assign-team`, { teamId }).then(r => r.data.data),
   delete: (id: number) => http.delete<ApiResponse<void>>(`/vehicles/${id}`),
+  getLogs: (vehicleId: number) => http.get<ApiResponse<VehicleUsageLog[]>>(`/vehicles/${vehicleId}/logs`).then(r => r.data.data),
+  getAllLogs: () => http.get<ApiResponse<VehicleUsageLog[]>>("/vehicles/logs").then(r => r.data.data),
 };
 
 // ─── Relief ───
@@ -110,4 +115,14 @@ export const adminApi = {
   deleteUser: (id: number) => http.delete<ApiResponse<void>>(`/admin/users/${id}`),
   getStats: () => http.get<ApiResponse<DashboardStats>>("/admin/dashboard").then(r => r.data.data),
   getDashboard: () => http.get<ApiResponse<DashboardStats>>("/admin/dashboard").then(r => r.data.data),
+};
+
+// ─── Settings ───
+export const settingsApi = {
+  getAll: () => http.get<ApiResponse<SystemSetting[]>>("/settings").then(r => r.data.data),
+  getPublic: () => http.get<ApiResponse<SystemSetting[]>>("/settings/public").then(r => r.data.data),
+  update: (key: string, value: string, description?: string) =>
+    http.put<ApiResponse<SystemSetting>>(`/settings/${key}`, { value, description }).then(r => r.data.data),
+  bulkSave: (settings: Record<string, string>) =>
+    http.post<ApiResponse<void>>("/settings/bulk", settings).then(r => r.data),
 };

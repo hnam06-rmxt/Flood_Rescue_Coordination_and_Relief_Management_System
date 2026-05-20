@@ -119,6 +119,7 @@ erDiagram
         double_precision latitude
         double_precision longitude
         text image_url
+        text proof_image_url
         integer number_of_people
         varchar urgency_level
         varchar status
@@ -285,12 +286,13 @@ Tâm điểm dữ liệu tiếp nhận SOS cứu nạn cứu hộ từ người 
 | `location` | `VARCHAR(255)` | `NOT NULL` | | Địa điểm xảy ra cứu nạn |
 | `latitude` | `DOUBLE PRECISION` | | | Vĩ độ tọa độ chính xác ghim bản đồ |
 | `longitude` | `DOUBLE PRECISION` | | | Kinh độ tọa độ chính xác ghim bản đồ |
-| `image_url` | `TEXT` | | | Link ảnh hiện trường nạn nhân gửi kèm |
+| `image_url` | `TEXT` | | | Link ảnh hiện trường nạn nhân gửi kèm ban đầu |
+| `proof_image_url`| `TEXT` | | | Link ảnh minh chứng sau khi đội cứu hộ hoàn thành nhiệm vụ |
 | `number_of_people` | `INTEGER` | | `1` | Số lượng người đang bị cô lập |
 | `urgency_level` | `VARCHAR(20)` | | `'MEDIUM'` | Mức khẩn cấp (LOW, MEDIUM, HIGH, CRITICAL) |
-| `status` | `VARCHAR(20)` | | `'PENDING'` | Trạng thái (PENDING, ASSIGNED, IN_PROGRESS, COMPLETED...) |
+| `status` | `VARCHAR(20)` | | `'PENDING'` | Trạng thái (PENDING, VERIFIED, ASSIGNED, IN_PROGRESS, COMPLETED, RELIEF_RECEIVED...) |
 | `assigned_team_id` | `BIGINT` | `FOREIGN KEY` -> `rescue_teams(team_id)` | | Đội cứu hộ được sở chỉ huy điều động |
-| `notes` | `TEXT` | | | Ghi chú thêm của điều phối viên |
+| `notes` | `TEXT` | | | Ghi chú thêm của điều phối viên / Ghi chú hoàn thành |
 | `created_time` | `TIMESTAMP` | | `NOW()` | Thời gian nạn nhân bấm SOS |
 | `updated_time` | `TIMESTAMP` | | | Thời điểm cập nhật trạng thái gần nhất |
 
@@ -643,15 +645,15 @@ Cung cấp công cụ quản trị hạt nhân, bảo mật và giám sát tính
 | Mã Chức Năng | Tên Chức Năng | Luồng Nghiệp Vụ & Mô Tả Chi Tiết | Tương Tác API & Database |
 |:---|:---|:---|:---|
 | **FE-CO-01** | Đăng nhập / Đăng xuất | Đăng nhập vào màn hình tác chiến của Sở chỉ huy, tiếp nhận quyền điều phối. | `POST /api/auth/login` |
-| **FE-CO-02** | Tiếp nhận & xác minh SOS | Hiển thị danh sách các yêu cầu SOS của người dân theo thời gian thực trên bản đồ số GIS. Điều phối viên gọi điện xác minh thông tin, cập nhật ghi chú hiện trường. | `GET /api/rescue-requests`<br/>`PUT /api/rescue-requests/{id}`<br/>PostgreSQL: `rescue_requests` |
+| **FE-CO-02** | Tiếp nhận & xác minh SOS | Hiển thị danh sách các yêu cầu SOS theo thời gian thực (WebSocket). Điều phối viên gọi điện xác minh thông tin, cập nhật ghi chú và chuyển sang `VERIFIED` hoặc từ chối `REJECTED`. | `PATCH /api/rescue-requests/{id}/verify`<br/>WebSocket: `/topic/sos-updates` |
 | **FE-CO-03** | Phân loại mức độ khẩn cấp | Đánh giá mức độ nguy hiểm (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`) dựa trên số lượng người gặp nạn, tình hình ngập sâu, và người già/trẻ em đi kèm để áp đặt SLA phản ứng nhanh. | `PATCH /api/rescue-requests/{id}/urgency`<br/>PostgreSQL: `rescue_requests` |
 | **FE-CO-04** | Quản lý vị trí địa lý điểm ghim | Quản lý vị trí, tọa độ kinh/vĩ độ của các trạm trú ẩn an toàn, các ca SOS cứu hộ để định vị trực quan trên bản đồ Leaflet GIS và tự động tính toán bán kính cứu hộ. | `GET/POST/DELETE /api/shelters`<br/>PostgreSQL: `shelters`, `rescue_requests` |
 | **FE-CO-05** | Quản lý đội cứu hộ | Thành lập mới, điều chỉnh nhân sự, cập nhật thông tin liên lạc và tình trạng sẵn sàng (`ACTIVE`, `INACTIVE`, `BUSY`) của các đội phản ứng nhanh thực địa. | `GET/POST/PUT/DELETE /api/rescue-teams`<br/>PostgreSQL: `rescue_teams` |
-| **FE-CO-06** | Phân công đội tác chiến | **Tác vụ hạt nhân**: Hệ thống gợi ý 3 đội rảnh gần nhất qua Redis GeoSet. Điều phối viên chỉ định đội tiếp cận ca SOS, hệ thống gửi thông báo đẩy an toàn (Isolated Transaction). | `PATCH /api/rescue-requests/{id}/assign`<br/>`GET /rescue-requests/{id}/nearby-teams`<br/>Redis: `geo:rescue_teams` |
-| **FE-CO-07** | Theo dõi tiến độ thời gian thực | Giám sát vị trí di chuyển GPS của đội cứu hộ và nạn nhân trực tiếp trên bản đồ tác chiến Leaflet số, cập nhật trạng thái di dời. | `GET /api/rescue-teams/{id}/location`<br/>`GET /api/rescue-requests/{id}/location`<br/>Redis: `geo:rescue_teams` |
-| **FE-CO-08** | Phân bổ phương tiện cứu hộ | Điều động bổ sung hoặc thu hồi xe đặc chủng, tàu cano cứu nạn được cấp phát cho các đội cứu hộ tùy theo tình trạng ngập sâu thực địa. | `PATCH /api/vehicles/{id}/assign-team`<br/>PostgreSQL: `vehicles` |
+| **FE-CO-06** | Phân công đội tác chiến | **Tác vụ hạt nhân**: Hệ thống gợi ý đội rảnh gần nhất qua Redis GeoSet. Cán bộ chỉ định đội tiếp cận ca SOS, hệ thống gửi thông báo đẩy và cập nhật WebSocket. | `PATCH /api/rescue-requests/{id}/assign`<br/>`GET /rescue-requests/{id}/nearby-teams`<br/>Redis: `geo:rescue_teams` |
+| **FE-CO-07** | Theo dõi tiến độ thời gian thực | Giám sát vị trí di chuyển GPS của đội cứu hộ và nạn nhân trực tiếp trên bản đồ tác chiến thông qua kênh WebSocket `/topic/map-refresh`. | WebSocket: `/topic/map-refresh`<br/>Redis: `geo:rescue_teams` |
+| **FE-CO-08** | Phân bổ phương tiện cứu hộ | Điều động bổ sung hoặc thu hồi xe đặc chủng, tàu cano cứu nạn được cấp phát cho các đội cứu hộ. Tính năng quản lý nhật ký (Log) sử dụng phương tiện trực quan. | `PATCH /api/vehicles/{id}/assign-team`<br/>PostgreSQL: `vehicles` |
 | **FE-CO-09** | Quản lý thông báo khẩn cấp | Biên soạn và phát sóng cảnh báo lũ khẩn cấp (vùng xả lũ, cảnh báo sạt lở) đến toàn bộ ứng dụng người dân trong khu vực ảnh hưởng. | `POST /api/flood-alerts`<br/>PostgreSQL: `flood_alerts`, `notifications` |
-| **FE-CO-10** | Thống kê số liệu và báo cáo tổng hợp | Tổng hợp trực quan số lượng người được cứu, tỷ lệ hoàn thành ca SOS, biểu đồ kho vật tư logistics trực tiếp trên Dashboard tác chiến thời gian thực thông qua API thống kê tổng hợp. | `GET /api/admin/dashboard`<br/>PostgreSQL: `rescue_requests`, `relief_distributions` |
+| **FE-CO-10** | Thống kê số liệu và báo cáo tổng hợp | Tổng hợp trực quan số lượng người được cứu, tỷ lệ hoàn thành ca SOS, biểu đồ kho vật tư logistics trực tiếp trên Dashboard phân quyền. | `GET /api/admin/dashboard`<br/>PostgreSQL: `rescue_requests`, `relief_distributions` |
 
 ### 5.3 Phân Hệ Người Dân (Citizen Portal Module)
 Cổng giao tiếp gọn nhẹ, trực quan giúp người dân vùng lũ tương tác khẩn cấp với lực lượng cứu hộ.
@@ -659,10 +661,10 @@ Cổng giao tiếp gọn nhẹ, trực quan giúp người dân vùng lũ tươn
 | Mã Chức Năng | Tên Chức Năng | Luồng Nghiệp Vụ & Mô Tả Chi Tiết | Tương Tác API & Database |
 |:---|:---|:---|:---|
 | **FE-CIT-01** | Đăng ký / Đăng nhập / Đăng xuất | Tạo tài khoản nhanh bằng số điện thoại để hệ thống lưu thông tin định danh phục vụ liên lạc cứu nạn. | `POST /api/auth/register`<br/>`POST /api/auth/login` |
-| **FE-CIT-02** | Gửi yêu cầu SOS khẩn cấp | Bấm nút SOS đỏ lớn, hệ thống tự động lấy tọa độ GPS từ trình duyệt/di động, cho phép tải lên hình ảnh hiện trường nguy hiểm và nhập số lượng người cần cứu. | `POST /api/rescue-requests`<br/>PostgreSQL: `rescue_requests` |
-| **FE-CIT-03** | Sửa vị trí / Hủy yêu cầu | Cho phép người dân kéo thả ghim vị trí chính xác trên bản đồ tương tác khi di chuyển lên mái nhà, hoặc hủy yêu cầu SOS nếu đã di dời an toàn. | `PATCH /api/rescue-requests/{id}/location`<br/>`PATCH /api/rescue-requests/{id}/cancel`<br/>PostgreSQL: `rescue_requests` |
-| **FE-CIT-04** | Theo dõi trạng thái & Lộ trình | Xem tiến trình xử lý yêu cầu cứu hộ (`PENDING` -> `ASSIGNED` -> `IN_PROGRESS` -> `COMPLETED`) và xem khoảng cách hành trình di chuyển thực tế của đội cứu hộ đang đến cứu. | `GET /api/rescue-requests/my-requests`<br/>Redis: `geo:rescue_teams` |
-| **FE-CIT-05** | Xác nhận hoàn thành | Người dân bấm xác nhận "Đã được cứu hộ an toàn" khi đội cứu hộ tiếp cận và di dời thành công, khép lại vòng đời ca cứu hộ. | `PATCH /api/rescue-requests/{id}/confirm-rescued`<br/>PostgreSQL: `rescue_requests` |
+| **FE-CIT-02** | Gửi yêu cầu SOS khẩn cấp | Bấm nút SOS đỏ lớn, hệ thống tự động lấy tọa độ GPS từ trình duyệt/di động, cho phép tải lên hình ảnh. **Có cơ chế Rate Limiting (chống Spam)**. | `POST /api/rescue-requests`<br/>Redis: Bucket4j Rate Limiting |
+| **FE-CIT-03** | Sửa vị trí / Hủy yêu cầu | Cho phép người dân kéo thả ghim vị trí chính xác trên bản đồ tương tác khi di chuyển lên mái nhà, hoặc hủy yêu cầu SOS nếu đã di dời an toàn. | `PATCH /api/rescue-requests/{id}/location`<br/>`PATCH /api/rescue-requests/{id}/cancel` |
+| **FE-CIT-04** | Theo dõi trạng thái & Lộ trình | Xem tiến trình xử lý yêu cầu cứu hộ qua WebSocket thời gian thực (`PENDING` -> `VERIFIED` -> `ASSIGNED` -> `IN_PROGRESS` -> `COMPLETED`). | WebSocket: `/topic/sos-updates` |
+| **FE-CIT-05** | Xác nhận đã cứu / Nhận hàng | Bấm xác nhận "Đã cứu" hoặc "Đã nhận cứu trợ" (trạng thái `RELIEF_RECEIVED`) khép lại vòng đời ca cứu hộ, cung cấp phản hồi cho Ban điều phối. | `PATCH /api/rescue-requests/{id}/relief-received`<br/>PostgreSQL: `rescue_requests` |
 
 ### 5.4 Phân Hệ Đội Cứu Hộ Thực Địa (Rescuer Field Module)
 Ứng dụng tác chiến di động dành cho các đội viên phản ứng nhanh tại hiện trường ngập lụt.
@@ -671,9 +673,9 @@ Cổng giao tiếp gọn nhẹ, trực quan giúp người dân vùng lũ tươn
 |:---|:---|:---|:---|
 | **FE-RES-01** | Đăng nhập / Đăng xuất | Đăng nhập tài khoản đội viên, chuyển trạng thái hoạt động sang sẵn sàng nhận lệnh. | `POST /api/auth/login` |
 | **FE-RES-02** | Tiếp nhận nhiệm vụ | Nhận thông báo đẩy âm thanh khẩn cấp khi có ca phân công mới, xem chi tiết số lượng nạn nhân, hình ảnh và ghi chú nguy hiểm. | `GET /api/rescue-requests/assigned`<br/>PostgreSQL: `rescue_requests` |
-| **FE-RES-03** | Xem vị trí & Chỉ đường | Bản đồ GPS Leaflet vẽ tuyến đường ngắn nhất từ vị trí hiện tại của đội cứu hộ đến vị trí người dân đang bị cô lập. | `GET /api/rescue-requests/{id}`<br/>Tích hợp Leaflet Routing Machine / Google Maps |
-| **FE-RES-04** | Cập nhật trạng thái | Đội viên cập nhật tiến độ cứu hộ (`Xác nhận tiếp nhận` -> `Đang di chuyển` -> `Đã tiếp cận hiện trường` -> `Đã đưa về trạm trú ẩn`). | `PATCH /api/rescue-requests/{id}/status`<br/>PostgreSQL: `rescue_requests` |
-| **FE-RES-05** | Gửi báo cáo định vị hiện trường | Hệ thống tự động chia sẻ tọa độ định vị GPS của đội cứu hộ thực địa mỗi 30 giây lên Redis GeoSet và ghi chú tác chiến trực tiếp trên ca SOS. | `PATCH /api/rescue-teams/{id}/location`<br/>`PATCH /api/rescue-requests/{id}/status`<br/>Redis: `geo:rescue_teams` |
+| **FE-RES-03** | Xem vị trí & Chỉ đường | Bản đồ GPS Leaflet vẽ tuyến đường từ vị trí Đội đến vị trí Nạn nhân. Dữ liệu bản đồ được đồng bộ thời gian thực qua WebSocket. | WebSocket: `/topic/map-refresh` |
+| **FE-RES-04** | Cập nhật trạng thái / Hoàn thành | Đội viên cập nhật trạng thái cứu hộ. Ở bước `COMPLETED`, Đội cứu hộ bắt buộc **Upload ảnh minh chứng thực địa** từ thư viện/camera máy để minh bạch thông tin. | `PATCH /api/rescue-requests/{id}/status`<br/>`POST /api/uploads/images` |
+| **FE-RES-05** | Gửi báo cáo định vị hiện trường | Hệ thống tự động chia sẻ tọa độ định vị GPS của đội cứu hộ lên Redis GeoSet và WebSocket để Sở chỉ huy giám sát. | `PATCH /api/rescue-teams/{id}/location`<br/>Redis: `geo:rescue_teams` |
 
 ### 5.5 Phân Hệ Quản Lý Cứu Trợ & Logistics (Relief & Logistics Manager Module)
 Quản trị kho bãi lương thực, nhu yếu phẩm và điều phối đội tàu cano chuyên chở hàng cứu trợ.
@@ -847,6 +849,13 @@ flowchart TD
 *   **Cache `rescueTeams`**: Xóa sạch cache khi có sự thay đổi về nhân sự đội cứu hộ, đổi xe, hoặc giải tán đội.
 *   **Cache `shelters`**: Xóa cache điểm lánh nạn khi quản lý cập nhật lại số lượng người lánh nạn thực tế.
 
+### 7.2 API Rate Limiting (Chống Spam bằng Bucket4j + Redis)
+
+Hệ thống sử dụng **Bucket4j** kết hợp với Redis để giới hạn lưu lượng (Rate Limiting) trên các endpoint nhạy cảm (như gửi yêu cầu SOS, đăng nhập) nhằm chống lại các cuộc tấn công DDoS và tin rác.
+- **Thuật toán**: Token Bucket (phân tán trạng thái qua Redis).
+- **Giới hạn**: Ví dụ, chỉ cho phép gửi 5 yêu cầu SOS / 1 phút / 1 địa chỉ IP.
+- **Cơ chế**: Khi vượt giới hạn, hệ thống trả về mã lỗi HTTP `429 Too Many Requests`.
+
 ---
 
 ## 8. Quy Trình Nghiệp Vụ Cốt Lõi (Core Workflows)
@@ -892,20 +901,34 @@ flowchart TD
 ```mermaid
 stateDiagram-v2
     [*] --> PENDING : Citizen gửi tín hiệu SOS khẩn cấp
-    PENDING --> ASSIGNED : Sở chỉ huy phân công Đội cứu hộ (Status: ACTIVE)
+    PENDING --> VERIFIED : Điều phối viên xác minh tính xác thực
+    PENDING --> REJECTED : Báo cáo giả / Spam
     PENDING --> CANCELLED : Citizen tự hủy (rời đi an toàn hoặc bấm nhầm)
     
-    ASSIGNED --> IN_PROGRESS : Đội trưởng xác nhận tiếp nhận nhiệm vụ thực địa
-    ASSIGNED --> CANCELLED : Hủy ca phân công do phát sinh ngoài ý muốn
+    VERIFIED --> ASSIGNED : Sở chỉ huy phân công Đội cứu hộ (Status: ACTIVE)
+    ASSIGNED --> IN_PROGRESS : Đội trưởng xác nhận tiếp nhận nhiệm vụ
     
-    IN_PROGRESS --> COMPLETED : Đội cứu hộ hoàn thành cứu hộ / phát đủ nhu yếu phẩm
-    IN_PROGRESS --> CANCELLED : Đội gặp sự cố thực địa (hỏng xe, cano hết xăng...)
+    IN_PROGRESS --> COMPLETED : Đội hoàn thành nhiệm vụ (Đính kèm ảnh minh chứng)
+    IN_PROGRESS --> CANCELLED : Đội gặp sự cố thực địa (hỏng xe, hết xăng...)
     
-    COMPLETED --> [*]
+    COMPLETED --> RELIEF_RECEIVED : Nạn nhân xác nhận đã nhận nhu yếu phẩm
+    RELIEF_RECEIVED --> [*]
     CANCELLED --> [*]
+    REJECTED --> [*]
 ```
 
 ---
+
+## 9. Kiến Trúc WebSocket Thời Gian Thực (STOMP / SockJS)
+
+Hệ thống ứng dụng WebSocket thông qua giao thức STOMP (Simple Text Oriented Messaging Protocol) để truyền tải dữ liệu đa hướng (bi-directional) theo thời gian thực giữa máy chủ Spring Boot và các trình duyệt (React / Vite).
+
+*   **Kết nối lõi**: Máy chủ lắng nghe tại endpoint `/ws` (có cơ chế dự phòng SockJS nếu trình duyệt không hỗ trợ WebSocket thuần).
+*   **Kênh Broadcast (Pub/Sub)**:
+    *   `/topic/sos-updates`: Kênh phát sóng mọi thay đổi về vòng đời của ca SOS (tạo mới, xác minh, giao đội, hoàn thành). Trang Dashboard và Map của tất cả nhân viên sẽ tự động tải lại dữ liệu mà không cần F5.
+    *   `/topic/map-refresh`: Kênh cập nhật vị trí tọa độ liên tục của đội cứu hộ và nạn nhân (đồng bộ từ Redis Geo).
+*   **Kênh Private (1-1)**:
+    *   `/user/queue/notifications`: Sử dụng đối tượng `Principal` từ JWT để gửi thông báo đẩy bí mật (Ví dụ: "Đội XYZ đã được giao nhiệm vụ") chỉ tới đích danh ID người nhận.
 
 ## 9. Cấu Hình Môi Trường Thực Thi (Deployment & Environments)
 

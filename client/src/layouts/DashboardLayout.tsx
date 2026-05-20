@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, LifeBuoy, Users, Truck, Package, Shield, AlertTriangle,
@@ -8,6 +8,7 @@ import { authActions } from "../store/authStore";
 import { userActions } from "../store/userStore";
 import { useUserStore } from "../hooks/useUserStore";
 import { notifApi } from "../services/apiService";
+import { wsService } from "../lib/websocket";
 
 type NavItem = { label: string; path: string; icon: React.ReactNode; roles?: string[] };
 
@@ -30,19 +31,54 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [toast, setToast] = useState<{title: string; message: string} | null>(null);
   const location = useLocation();
   const navigate = useNavigate();
   const profile = useUserStore(s => s.profile);
   const userRole = profile?.role || "";
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const filteredNav = navItems.filter(item => !item.roles || item.roles.includes(userRole));
 
   useEffect(() => {
+    // Load initial count via HTTP
     loadUnreadCount();
-    // Pull every 5 seconds for real-time notification badge updates
-    const interval = setInterval(loadUnreadCount, 5000);
-    return () => clearInterval(interval);
-  }, []);
+
+    // Connect WebSocket and subscribe to personal notifications
+    wsService.connect();
+
+    const unsubNotif = profile?.id
+      ? wsService.subscribePersonal(profile.id, (msg) => {
+          setUnreadCount(c => c + 1);
+          const title = (msg.title as string) || "Thông báo mới";
+          const message = (msg.message as string) || "";
+          showToast(title, message);
+        })
+      : () => {};
+
+    // Also subscribe to SOS broadcasts (for staff)
+    const unsubSos = wsService.subscribe("/topic/sos-updates", (msg) => {
+      if (msg.type === "SOS_NEW") {
+        setUnreadCount(c => c + 1);
+        showToast("🚨 SOS Mới!", `${msg.userName} tại ${msg.location}`);
+      }
+    });
+
+    // Fallback polling every 30s (much less frequent than before)
+    const interval = setInterval(loadUnreadCount, 30000);
+
+    return () => {
+      clearInterval(interval);
+      unsubNotif();
+      unsubSos();
+    };
+  }, [profile?.id]);
+
+  function showToast(title: string, message: string) {
+    setToast({ title, message });
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 4000);
+  }
 
   async function loadUnreadCount() {
     try {
@@ -61,6 +97,24 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-screen bg-surface overflow-hidden">
+      {/* Toast Notification */}
+      {toast && (
+        <div className="fixed top-4 right-4 z-[9999] max-w-sm animate-slide-up">
+          <div className="bg-brand-navy text-on-dark rounded-xl shadow-modal p-4 border border-white/10">
+            <div className="flex items-start gap-3">
+              <span className="text-lg">🔔</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold leading-tight">{toast.title}</p>
+                {toast.message && <p className="text-xs text-on-dark/70 mt-0.5 line-clamp-2">{toast.message}</p>}
+              </div>
+              <button onClick={() => setToast(null)} className="text-on-dark/40 hover:text-on-dark">
+                <X size={14} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Sidebar */}
       <aside className={`fixed inset-y-0 left-0 z-40 w-64 bg-brand-navy text-on-dark transform transition-transform duration-200 ease-in-out
         lg:relative lg:translate-x-0 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>

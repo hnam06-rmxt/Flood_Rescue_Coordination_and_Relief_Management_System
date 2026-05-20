@@ -64,6 +64,15 @@ public class RescueRequestController {
         return ApiResponse.success("Confirmed rescued successfully", response);
     }
 
+    @PatchMapping("/{id}/relief-received")
+    @Operation(summary = "Xác nhận đã nhận cứu trợ", description = "Citizen xác nhận đã nhận được hàng cứu trợ")
+    public ApiResponse<RescueRequestResponse> markReliefReceived(
+            @PathVariable Long id, Authentication auth) {
+        User user = userRepository.findByUsername(auth.getName())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        return ApiResponse.success("Relief received confirmed", rescueRequestService.markReliefReceived(id, user.getId()));
+    }
+
     @PatchMapping("/{id}/location")
     @Operation(summary = "Cập nhật vị trí SOS", description = "Citizen gửi ping vị trí liên tục khi nguy cấp")
     public ApiResponse<RescueRequestResponse> updateLocation(@PathVariable Long id, @RequestBody java.util.Map<String, Double> location) {
@@ -126,6 +135,16 @@ public class RescueRequestController {
         return ApiResponse.success("Team assigned successfully", response);
     }
 
+    @PatchMapping("/{id}/verify")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN', 'COORDINATOR')")
+    @Operation(summary = "Xác minh SOS hợp lệ", description = "Coordinator xác minh yêu cầu SOS là hợp lệ trước khi phân công")
+    public ApiResponse<RescueRequestResponse> verifyRequest(
+            @PathVariable Long id,
+            @RequestBody(required = false) UpdateStatusRequest request) {
+        String notes = request != null ? request.getNotes() : null;
+        return ApiResponse.success("Request verified", rescueRequestService.verifyRequest(id, notes));
+    }
+
     @PatchMapping("/{id}/status")
     @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN', 'COORDINATOR', 'RESCUER', 'CITIZEN')")
     @Operation(summary = "Cập nhật trạng thái yêu cầu", description = "Cập nhật trạng thái xử lý yêu cầu")
@@ -151,8 +170,10 @@ public class RescueRequestController {
             }
         }
 
-        RescueRequestResponse response = rescueRequestService.updateRescueRequestStatus(id, request.getStatus());
+        RescueRequestResponse response = rescueRequestService.updateRescueRequestStatus(
+                id, request.getStatus(), request.getNotes(), request.getProofImageUrl());
         return ApiResponse.success("Status updated successfully", response);
+
     }
 
     @PatchMapping("/{id}/urgency")

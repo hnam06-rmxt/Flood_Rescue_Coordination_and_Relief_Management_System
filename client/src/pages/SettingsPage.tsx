@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { Settings, Save, RotateCcw, MapPin, Package, Bell, Database, Zap, CheckCircle } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Settings, Save, RotateCcw, MapPin, Package, Bell, Database, Zap, CheckCircle, Cloud, CloudOff } from "lucide-react";
+import { settingsApi } from "../services/apiService";
 
 type SystemConfig = {
   // Rescue Settings
@@ -96,14 +97,56 @@ export function SettingsPage() {
     } catch { return defaultConfig; }
   });
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [dbSynced, setDbSynced] = useState(false);
+
+  // Load settings from DB on mount
+  useEffect(() => {
+    settingsApi.getAll()
+      .then(list => {
+        if (list && list.length > 0) {
+          const fromDb: Partial<SystemConfig> = {};
+          list.forEach(s => {
+            const key = s.key as keyof SystemConfig;
+            const val = s.value;
+            if (typeof defaultConfig[key] === "boolean") {
+              (fromDb as Record<string, unknown>)[key] = val === "true";
+            } else if (typeof defaultConfig[key] === "number") {
+              (fromDb as Record<string, unknown>)[key] = parseFloat(val);
+            } else {
+              (fromDb as Record<string, unknown>)[key] = val;
+            }
+          });
+          setConfig(prev => ({ ...prev, ...fromDb }));
+          setDbSynced(true);
+        }
+      })
+      .catch(() => {
+        // Fallback: use localStorage if DB unavailable
+        setDbSynced(false);
+      });
+  }, []);
 
   function updateConfig<K extends keyof SystemConfig>(key: K, value: SystemConfig[K]) {
     setConfig(prev => ({ ...prev, [key]: value }));
     setSaved(false);
   }
 
-  function handleSave() {
+  async function handleSave() {
+    setSaving(true);
+    // Convert config to string map
+    const settings: Record<string, string> = {};
+    Object.entries(config).forEach(([k, v]) => { settings[k] = String(v); });
+    try {
+      await settingsApi.bulkSave(settings);
+      setDbSynced(true);
+    } catch {
+      // Fallback to localStorage if API fails
+      setDbSynced(false);
+    }
+    // Always save to localStorage as backup
     localStorage.setItem("flood_rescue_system_config", JSON.stringify(config));
+    setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
   }
@@ -126,11 +169,16 @@ export function SettingsPage() {
           <p className="text-sm text-slate">Tùy chỉnh tham số và danh mục hệ thống</p>
         </div>
         <div className="flex items-center gap-2">
+          <span className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${
+            dbSynced ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+          }`}>
+            {dbSynced ? <><Cloud size={12} /> Đồng bộ DB</> : <><CloudOff size={12} /> Chỉ local</>}
+          </span>
           <button onClick={handleReset} className="btn-secondary flex items-center gap-1.5 text-xs">
             <RotateCcw size={14} /> Khôi phục mặc định
           </button>
-          <button onClick={handleSave} className={`btn-primary flex items-center gap-1.5 text-xs ${saved ? "!bg-emerald-600" : ""}`}>
-            {saved ? <><CheckCircle size={14} /> Đã lưu!</> : <><Save size={14} /> Lưu cấu hình</>}
+          <button onClick={handleSave} disabled={saving} className={`btn-primary flex items-center gap-1.5 text-xs ${saved ? "!bg-emerald-600" : ""}`}>
+            {saving ? <><span className="animate-spin">⟳</span> Đang lưu...</> : saved ? <><CheckCircle size={14} /> Đã lưu!</> : <><Save size={14} /> Lưu cấu hình</>}
           </button>
         </div>
       </div>

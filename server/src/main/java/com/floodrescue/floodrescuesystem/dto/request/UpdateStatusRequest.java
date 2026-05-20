@@ -4,6 +4,7 @@ public class UpdateStatusRequest {
 
     private String status;
     private String notes;
+    private String proofImageUrl;
 
     public UpdateStatusRequest() {}
 
@@ -12,4 +13,7 @@ public class UpdateStatusRequest {
 
     public String getNotes() { return notes; }
     public void setNotes(String notes) { this.notes = notes; }
+
+    public String getProofImageUrl() { return proofImageUrl; }
+    public void setProofImageUrl(String proofImageUrl) { this.proofImageUrl = proofImageUrl; }
 }

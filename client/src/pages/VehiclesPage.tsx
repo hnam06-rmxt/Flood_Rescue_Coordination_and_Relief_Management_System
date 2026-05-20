@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { Plus, Truck, UserCheck, Edit, Trash2 } from "lucide-react";
+import { Plus, Truck, UserCheck, Edit, Trash2, ClipboardList } from "lucide-react";
 import { vehicleApi, teamApi } from "../services/apiService";
-import type { RescueVehicle, RescueTeam } from "../types/rescue";
+import type { RescueVehicle, RescueTeam, VehicleUsageLog } from "../types/rescue";
 
 const statusBadge: Record<string, string> = { 
   AVAILABLE: "badge-green", 
@@ -11,8 +11,11 @@ const statusBadge: Record<string, string> = {
 };
 
 export function VehiclesPage() {
+  const [activeTab, setActiveTab] = useState<"vehicles" | "logs">("vehicles");
   const [vehicles, setVehicles] = useState<RescueVehicle[]>([]);
   const [teams, setTeams] = useState<RescueTeam[]>([]);
+  const [usageLogs, setUsageLogs] = useState<VehicleUsageLog[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: "", type: "BOAT", licensePlate: "", capacity: 10, currentLocation: "", status: "AVAILABLE" });
 
@@ -20,6 +23,10 @@ export function VehiclesPage() {
   const [editForm, setEditForm] = useState({ name: "", type: "BOAT", licensePlate: "", capacity: 10, currentLocation: "", status: "AVAILABLE" });
 
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    if (activeTab === "logs") loadLogs();
+  }, [activeTab]);
 
   async function load() { 
     try { 
@@ -84,16 +91,47 @@ export function VehiclesPage() {
     }
   }
 
+  async function loadLogs() {
+    setLogsLoading(true);
+    try {
+      const logs = await vehicleApi.getAllLogs();
+      setUsageLogs(logs || []);
+    } catch {
+      setUsageLogs([]);
+    } finally {
+      setLogsLoading(false);
+    }
+  }
+
   return (
     <div className="space-y-4 animate-fade-in">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-semibold text-ink">Phương tiện cứu hộ</h1>
           <p className="text-sm text-slate">Quản lý và điều phối phương tiện cho các đội</p>
         </div>
-        <button onClick={() => setShowForm(!showForm)} className="btn-primary">
-          <Plus size={16} /> Thêm phương tiện
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Tab switcher */}
+          <div className="flex rounded-lg border border-hairline overflow-hidden text-xs font-medium">
+            <button onClick={() => setActiveTab("vehicles")}
+              className={`px-3 py-1.5 flex items-center gap-1.5 transition-colors ${
+                activeTab === "vehicles" ? "bg-primary text-white" : "text-slate hover:bg-surface"
+              }`}>
+              <Truck size={13} /> Phương tiện
+            </button>
+            <button onClick={() => setActiveTab("logs")}
+              className={`px-3 py-1.5 flex items-center gap-1.5 transition-colors ${
+                activeTab === "logs" ? "bg-primary text-white" : "text-slate hover:bg-surface"
+              }`}>
+              <ClipboardList size={13} /> Nhật ký sử dụng
+            </button>
+          </div>
+          {activeTab === "vehicles" && (
+            <button onClick={() => setShowForm(!showForm)} className="btn-primary text-xs">
+              <Plus size={14} /> Thêm phương tiện
+            </button>
+          )}
+        </div>
       </div>
 
       {showForm && (
@@ -259,6 +297,58 @@ export function VehiclesPage() {
           </table>
         </div>
       </div>
+      {/* Usage Logs Tab */}
+      {activeTab === "logs" && (
+        <div className="card overflow-hidden">
+          <div className="px-4 py-3 border-b border-hairline flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-ink flex items-center gap-2">
+              <ClipboardList size={16} className="text-primary" /> Nhật ký sử dụng phương tiện
+            </h3>
+            <button onClick={loadLogs} className="btn-secondary text-xs !py-1 !px-2">Làm mới</button>
+          </div>
+          {logsLoading ? (
+            <div className="p-8 text-center text-slate">Đang tải nhật ký...</div>
+          ) : usageLogs.length === 0 ? (
+            <div className="p-8 text-center text-slate">Chưa có nhật ký nào</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-surface-soft">
+                    <th className="px-4 py-3 text-left font-medium text-slate text-xs">Thời gian</th>
+                    <th className="px-4 py-3 text-left font-medium text-slate text-xs">Phương tiện</th>
+                    <th className="px-4 py-3 text-left font-medium text-slate text-xs">Hành động</th>
+                    <th className="px-4 py-3 text-left font-medium text-slate text-xs">Đội</th>
+                    <th className="px-4 py-3 text-left font-medium text-slate text-xs">Trạng thái cũ → Mới</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-hairline-soft">
+                  {usageLogs.map(log => (
+                    <tr key={log.id} className="hover:bg-surface-soft transition-colors">
+                      <td className="px-4 py-3 text-xs text-slate">
+                        {log.loggedAt ? new Date(log.loggedAt).toLocaleString("vi-VN") : "---"}
+                      </td>
+                      <td className="px-4 py-3 font-medium">{log.vehicleName}</td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                          log.action === "ASSIGNED" ? "bg-blue-50 text-blue-700" :
+                          log.action === "RETURNED" ? "bg-green-50 text-green-700" :
+                          log.action === "MAINTENANCE" ? "bg-orange-50 text-orange-700" :
+                          "bg-slate-50 text-slate-700"
+                        }`}>{log.action}</span>
+                      </td>
+                      <td className="px-4 py-3 text-xs">{log.teamName || "---"}</td>
+                      <td className="px-4 py-3 text-xs text-slate">
+                        {log.oldStatus && log.newStatus ? `${log.oldStatus} → ${log.newStatus}` : log.newStatus || "---"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

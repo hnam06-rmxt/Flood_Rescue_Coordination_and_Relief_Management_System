@@ -1,8 +1,10 @@
 export type RescueRequest = {
   requestId: number; description: string; location: string;
   latitude: number; longitude: number; urgencyLevel: string;
-  status: string; image?: string; notes?: string; numberOfPeople: number;
-  userId: number; assignedTeamId?: number; assignedTeamName?: string;
+  status: "PENDING" | "VERIFIED" | "ASSIGNED" | "IN_PROGRESS" | "COMPLETED" | "RELIEF_RECEIVED" | "CANCELLED" | "REJECTED" | string;
+  image?: string; notes?: string; numberOfPeople: number;
+  userId: number; userName?: string;
+  assignedTeamId?: number; assignedTeamName?: string;
   createdTime: string; updatedTime?: string;
 };
 export type CreateRescueRequest = {
@@ -32,7 +34,6 @@ export type ReliefDistribution = {
   quantity: number; recipientName?: string; recipientLocation?: string;
   distributedById?: number; distributedByName?: string;
   rescueRequestId?: number; notes?: string; distributedAt?: string;
-  // Frontend-only fields for form
   reliefItemId?: number; recipientType?: string; recipientId?: number;
   quantityDistributed?: number; distributionDate?: string;
 };
@@ -51,6 +52,7 @@ export type FloodAlert = {
 export type Notification = {
   id: number; title: string; message: string;
   type: string; isRead: boolean; createdAt: string;
+  referenceId?: number;
 };
 export type DashboardStats = {
   totalUsers: number; totalRescueRequests: number;
@@ -73,4 +75,27 @@ export type NearbyTeamSuggestion = {
   distanceKm: number;
   distanceDisplay: string;
   vehicleNames: string[];
+};
+
+export type VehicleUsageLog = {
+  id: number;
+  vehicleId: number;
+  vehicleName: string;
+  teamId?: number;
+  teamName?: string;
+  requestId?: number;
+  action: string;
+  oldStatus?: string;
+  newStatus?: string;
+  notes?: string;
+  loggedBy?: number;
+  loggedAt: string;
+};
+
+export type SystemSetting = {
+  key: string;
+  value: string;
+  description?: string;
+  updatedBy?: number;
+  updatedAt?: string;
 };

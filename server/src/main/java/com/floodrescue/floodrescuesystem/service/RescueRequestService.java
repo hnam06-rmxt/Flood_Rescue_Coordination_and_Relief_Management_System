@@ -30,6 +30,9 @@ public class RescueRequestService {
     @Autowired
     private NotificationService notificationService;
 
+    @Autowired
+    private WebSocketNotificationService webSocketNotificationService;
+
     /**
      * Tạo yêu cầu cứu hộ mới
      */
@@ -110,7 +113,11 @@ public class RescueRequestService {
             // Safe fallback to prevent transactional failure on notification errors
         }
 
-        return mapToResponse(savedRequest);
+        // Push WebSocket broadcast cho staff
+        RescueRequestResponse responseForWs = mapToResponse(savedRequest);
+        webSocketNotificationService.broadcastSosAlert(responseForWs);
+
+        return responseForWs;
     }
 
     /**
@@ -207,14 +214,29 @@ public class RescueRequestService {
             // Safe fallback
         }
 
+        // Push WebSocket
+        webSocketNotificationService.broadcastStatusUpdate(
+            updatedRequest.getRequestId(),
+            updatedRequest.getStatus().name(),
+            updatedRequest.getAssignedTeam() != null ? updatedRequest.getAssignedTeam().getTeamId() : null
+        );
+
         return mapToResponse(updatedRequest);
     }
 
     /**
      * Cập nhật trạng thái yêu cầu cứu hộ
      */
+    /**
+     * Cập nhật trạng thái yêu cầu cứu hộ (kèm notes và proof image)
+     */
     @Transactional
     public RescueRequestResponse updateRescueRequestStatus(Long requestId, String status) {
+        return updateRescueRequestStatus(requestId, status, null, null);
+    }
+
+    @Transactional
+    public RescueRequestResponse updateRescueRequestStatus(Long requestId, String status, String notes, String proofImageUrl) {
         RescueRequest rescueRequest = rescueRequestRepository.findById(requestId)
                 .orElseThrow(() -> new ResourceNotFoundException("Yêu cầu cứu hộ không tồn tại với ID: " + requestId));
 
@@ -227,6 +249,12 @@ public class RescueRequestService {
 
         rescueRequest.setStatus(requestStatus);
         rescueRequest.setUpdatedTime(LocalDateTime.now());
+        if (notes != null && !notes.isBlank()) {
+            rescueRequest.setNotes(notes);
+        }
+        if (proofImageUrl != null && !proofImageUrl.isBlank()) {
+            rescueRequest.setProofImageUrl(proofImageUrl);
+        }
 
         RescueRequest updatedRequest = rescueRequestRepository.save(rescueRequest);
 
@@ -236,6 +264,8 @@ public class RescueRequestService {
                 if (requestStatus == RequestStatus.ASSIGNED) vietnameseStatusText = "Đã giao cho đội cứu hộ";
                 else if (requestStatus == RequestStatus.IN_PROGRESS) vietnameseStatusText = "Đang tiến hành giải cứu";
                 else if (requestStatus == RequestStatus.COMPLETED) vietnameseStatusText = "Hoàn thành giải cứu an toàn";
+                else if (requestStatus == RequestStatus.VERIFIED) vietnameseStatusText = "Đã xác minh hợp lệ";
+                else if (requestStatus == RequestStatus.RELIEF_RECEIVED) vietnameseStatusText = "Đã nhận hàng cứu trợ";
                 
                 notificationService.createNotification(
                     rescueRequest.getUser().getId(),
@@ -249,7 +279,72 @@ public class RescueRequestService {
             // Safe fallback
         }
 
+        // Push WebSocket
+        webSocketNotificationService.broadcastStatusUpdate(
+            updatedRequest.getRequestId(),
+            updatedRequest.getStatus().name(),
+            updatedRequest.getAssignedTeam() != null ? updatedRequest.getAssignedTeam().getTeamId() : null
+        );
+
         return mapToResponse(updatedRequest);
+    }
+
+    /**
+     * Coordinator xác minh SOS hợp lệ → VERIFIED
+     */
+    @Transactional
+    public RescueRequestResponse verifyRequest(Long requestId, String notes) {
+        RescueRequest req = rescueRequestRepository.findById(requestId)
+                .orElseThrow(() -> new ResourceNotFoundException("Yêu cầu cứu hộ không tồn tại với ID: " + requestId));
+        req.setStatus(RequestStatus.VERIFIED);
+        if (notes != null && !notes.isBlank()) req.setNotes(notes);
+        req.setUpdatedTime(LocalDateTime.now());
+        RescueRequest saved = rescueRequestRepository.save(req);
+        try {
+            if (req.getUser() != null) {
+                notificationService.createNotification(
+                    req.getUser().getId(),
+                    "✅ SOS đã được xác minh",
+                    "Yêu cầu cứu hộ của bạn đã được điều phối viên xác minh và đang được xử lý.",
+                    "SOS_VERIFIED", saved.getRequestId()
+                );
+            }
+        } catch (Exception ignored) {}
+        webSocketNotificationService.broadcastStatusUpdate(saved.getRequestId(), "VERIFIED",
+            saved.getAssignedTeam() != null ? saved.getAssignedTeam().getTeamId() : null);
+        return mapToResponse(saved);
+    }
+
+    /**
+     * Citizen xác nhận đã nhận cứu trợ → RELIEF_RECEIVED
+     */
+    @Transactional
+    public RescueRequestResponse markReliefReceived(Long requestId, Long citizenId) {
+        RescueRequest req = rescueRequestRepository.findById(requestId)
+                .orElseThrow(() -> new ResourceNotFoundException("Yêu cầu cứu hộ không tồn tại với ID: " + requestId));
+        if (citizenId != null && !req.getUser().getId().equals(citizenId)) {
+            throw new BadRequestException("Bạn chỉ có thể xác nhận yêu cầu của chính mình!");
+        }
+        req.setStatus(RequestStatus.RELIEF_RECEIVED);
+        req.setUpdatedTime(LocalDateTime.now());
+        RescueRequest saved = rescueRequestRepository.save(req);
+        try {
+            // Notify all coordinators/admins
+            List<User> staff = userRepository.findAll().stream()
+                    .filter(u -> u.getRole() != null && u.getRole().getName() != null &&
+                            (u.getRole().getName().contains("ADMIN") || u.getRole().getName().contains("COORDINATOR")))
+                    .collect(Collectors.toList());
+            for (User u : staff) {
+                notificationService.createNotification(
+                    u.getId(), "Citizen xác nhận đã nhận cứu trợ",
+                    req.getUser().getFullName() + " đã xác nhận nhận được cứu trợ cho ca #" + requestId,
+                    "RELIEF_RECEIVED", requestId
+                );
+            }
+        } catch (Exception ignored) {}
+        webSocketNotificationService.broadcastStatusUpdate(saved.getRequestId(), "RELIEF_RECEIVED",
+            saved.getAssignedTeam() != null ? saved.getAssignedTeam().getTeamId() : null);
+        return mapToResponse(saved);
     }
 
     /**
@@ -346,6 +441,50 @@ public class RescueRequestService {
     }
 
     /**
+     * Coordinator xác minh SOS hợp lệ (PENDING → VERIFIED)
+     */
+    @Transactional
+    public RescueRequestResponse verifyRequest(Long requestId, String notes) {
+        RescueRequest rescueRequest = rescueRequestRepository.findById(requestId)
+                .orElseThrow(() -> new ResourceNotFoundException("Yêu cầu cứu hộ không tồn tại: " + requestId));
+        if (!"PENDING".equals(rescueRequest.getStatus().toString())) {
+            throw new BadRequestException("Chỉ có thể xác minh yêu cầu ở trạng thái PENDING");
+        }
+        rescueRequest.setStatus(RequestStatus.VERIFIED);
+        if (notes != null && !notes.isBlank()) {
+            rescueRequest.setNotes(notes);
+        }
+        rescueRequest.setUpdatedTime(LocalDateTime.now());
+        RescueRequest saved = rescueRequestRepository.save(rescueRequest);
+        // Push WebSocket notification
+        try {
+            webSocketNotificationService.notifyStatusUpdate(saved.getRequestId(), "VERIFIED",
+                    rescueRequest.getUser().getId(), rescueRequest.getLocation());
+        } catch (Exception ignored) {}
+        return mapToResponse(saved);
+    }
+
+    /**
+     * Citizen xác nhận đã nhận hàng cứu trợ (COMPLETED → RELIEF_RECEIVED)
+     */
+    @Transactional
+    public RescueRequestResponse markReliefReceived(Long requestId, Long userId) {
+        RescueRequest rescueRequest = rescueRequestRepository.findById(requestId)
+                .orElseThrow(() -> new ResourceNotFoundException("Yêu cầu cứu hộ không tồn tại: " + requestId));
+        if (!rescueRequest.getUser().getId().equals(userId)) {
+            throw new org.springframework.security.access.AccessDeniedException("Bạn không có quyền xác nhận yêu cầu này");
+        }
+        rescueRequest.setStatus(RequestStatus.RELIEF_RECEIVED);
+        rescueRequest.setUpdatedTime(LocalDateTime.now());
+        RescueRequest saved = rescueRequestRepository.save(rescueRequest);
+        try {
+            webSocketNotificationService.notifyStatusUpdate(saved.getRequestId(), "RELIEF_RECEIVED",
+                    rescueRequest.getUser().getId(), rescueRequest.getLocation());
+        } catch (Exception ignored) {}
+        return mapToResponse(saved);
+    }
+
+    /**
      * Chuyển đổi RescueRequest entity sang RescueRequestResponse DTO
      */
     private RescueRequestResponse mapToResponse(RescueRequest rescueRequest) {
@@ -370,6 +509,7 @@ public class RescueRequestService {
         }
 
         response.setNotes(rescueRequest.getNotes());
+        response.setProofImageUrl(rescueRequest.getProofImageUrl());
         return response;
     }
-}
+}

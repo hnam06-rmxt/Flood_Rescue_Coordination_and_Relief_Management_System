@@ -54,6 +54,9 @@ public class RescueRequest {
     @Column(name = "notes", columnDefinition = "TEXT")
     private String notes;
 
+    @Column(name = "proof_image_url", columnDefinition = "TEXT")
+    private String proofImageUrl;
+
     public RescueRequest() {
         this.createdTime = LocalDateTime.now();
         this.status = RequestStatus.PENDING;
@@ -185,5 +188,13 @@ public class RescueRequest {
 
     public void setNotes(String notes) {
         this.notes = notes;
+    }
+
+    public String getProofImageUrl() {
+        return proofImageUrl;
+    }
+
+    public void setProofImageUrl(String proofImageUrl) {
+        this.proofImageUrl = proofImageUrl;
     }
 }

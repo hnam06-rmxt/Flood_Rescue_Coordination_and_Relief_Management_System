@@ -3,10 +3,12 @@ import { MapContainer, TileLayer, Marker, Popup, useMap, Polygon, useMapEvents, 
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { rescueApi, shelterApi, teamApi } from "../services/apiService";
+import { wsService } from "../lib/websocket";
 import type { RescueRequest, Shelter, RescueTeam } from "../types/rescue";
 import { LifeBuoy, Shield, Layers, Truck, TriangleAlert, MapPin, Navigation, Clock, Users, Phone } from "lucide-react";
 import { useUserStore } from "../hooks/useUserStore";
 import { useSearchParams } from "react-router-dom";
+
 
 // Fix Leaflet default icon issue
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
@@ -162,9 +164,19 @@ export function MapPage() {
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadData, 10000); // Tự động refresh mỗi 10s (Live Dashboard)
-    return () => clearInterval(interval);
+    // WebSocket: cập nhật map khi SOS mới hoặc vị trí đội thay đổi
+    wsService.connect();
+    const unsubSos = wsService.subscribe("/topic/sos-updates", () => loadData());
+    const unsubMap = wsService.subscribe("/topic/map-refresh", () => loadData());
+    // Fallback polling mỗi 30s (giảm từ 10s)
+    const interval = setInterval(loadData, 30000);
+    return () => {
+      clearInterval(interval);
+      unsubSos();
+      unsubMap();
+    };
   }, []);
+
 
   const getNearestTeamOrShelter = (req: RescueRequest) => {
     let closestPos: [number, number] | null = null;

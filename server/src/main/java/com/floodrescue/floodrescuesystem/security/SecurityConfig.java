@@ -1,7 +1,6 @@
 package com.floodrescue.floodrescuesystem.security;
 
 import com.floodrescue.floodrescuesystem.repository.UserRepository;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -32,9 +31,6 @@ public class SecurityConfig {
     private final RedisRateLimitFilter redisRateLimitFilter;
     private final CustomUserDetailsService customUserDetailsService;
 
-    @Value("${app.cors.allowed-origin-patterns:http://localhost:5173,http://localhost:3000}")
-    private String allowedOriginPatterns;
-
     public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter,
                           RedisRateLimitFilter redisRateLimitFilter,
                           CustomUserDetailsService customUserDetailsService,
@@ -53,7 +49,6 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/ws/**").permitAll()
-                        .requestMatchers("/", "/index.html", "/favicon.svg", "/icons.svg", "/assets/**").permitAll()
                         .requestMatchers("/error").permitAll()
                         .requestMatchers(
                                 "/swagger-ui/**",
@@ -73,7 +68,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOriginPatterns(parseCsv(allowedOriginPatterns));
+        configuration.setAllowedOrigins(List.of("http://localhost:5173", "http://localhost:3000"));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);
@@ -81,13 +76,6 @@ public class SecurityConfig {
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;
-    }
-
-    private List<String> parseCsv(String value) {
-        return Arrays.stream(value.split(","))
-                .map(String::trim)
-                .filter(origin -> !origin.isBlank())
-                .toList();
     }
 
     @Bean

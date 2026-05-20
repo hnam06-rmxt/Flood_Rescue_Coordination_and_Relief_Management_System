@@ -5,7 +5,6 @@ import { useUserStore } from "../hooks/useUserStore";
 import { wsService } from "../lib/websocket";
 import { Link } from "react-router-dom";
 import type { DashboardStats, RescueRequest, FloodAlert } from "../types/rescue";
-import type { UserProfile } from "../types/user";
 
 const statCards = [
   { key: "totalRescueRequests", label: "Yêu cầu cứu hộ", icon: <LifeBuoy size={20} />, color: "bg-tint-lavender text-primary" },
@@ -205,7 +204,7 @@ export function DashboardPage() {
   return <StaffDashboard profile={profile} />;
 }
 
-function StaffDashboard({ profile }: { profile: UserProfile | null }) {
+function StaffDashboard({ profile }: { profile: { fullName?: string; role?: string; id?: number } | null }) {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [recentRequests, setRecentRequests] = useState<RescueRequest[]>([]);
   const [activeAlerts, setActiveAlerts] = useState<FloodAlert[]>([]);

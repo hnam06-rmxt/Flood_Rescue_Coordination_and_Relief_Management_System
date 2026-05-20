@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, LifeBuoy, Users, Truck, Package, Shield, AlertTriangle,
@@ -8,6 +8,7 @@ import { authActions } from "../store/authStore";
 import { userActions } from "../store/userStore";
 import { useUserStore } from "../hooks/useUserStore";
 import { notifApi } from "../services/apiService";
+import { useNotificationSocket } from "../hooks/useNotificationSocket";
 
 type NavItem = { label: string; path: string; icon: React.ReactNode; roles?: string[] };
 
@@ -37,21 +38,23 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
 
   const filteredNav = navItems.filter(item => !item.roles || item.roles.includes(userRole));
 
-  useEffect(() => {
-    loadUnreadCount();
-    // Pull every 5 seconds for real-time notification badge updates
-    const interval = setInterval(loadUnreadCount, 5000);
-    return () => clearInterval(interval);
-  }, []);
-
-  async function loadUnreadCount() {
+  const loadUnreadCount = useCallback(async () => {
     try {
       const count = await notifApi.getUnreadCount();
       setUnreadCount(count || 0);
     } catch {
       setUnreadCount(0);
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    loadUnreadCount();
+  }, [loadUnreadCount]);
+
+  useNotificationSocket({
+    onUnreadCount: loadUnreadCount,
+    fallbackPollMs: 30000,
+  });
 
   function handleLogout() {
     authActions.logout();

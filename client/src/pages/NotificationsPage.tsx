@@ -1,13 +1,19 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Bell, Check, CheckCheck } from "lucide-react";
 import { notifApi } from "../services/apiService";
+import { useNotificationSocket } from "../hooks/useNotificationSocket";
 import type { Notification } from "../types/rescue";
 
 export function NotificationsPage() {
   const [notifs, setNotifs] = useState<Notification[]>([]);
 
-  useEffect(() => { load(); }, []);
-  async function load() { try { setNotifs(await notifApi.getAll() || []); } catch { setNotifs([]); } }
+  const load = useCallback(async () => {
+    try { setNotifs(await notifApi.getAll() || []); } catch { setNotifs([]); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  useNotificationSocket({ onNotification: load, fallbackPollMs: 0 });
 
   async function markAllRead() {
     try { await notifApi.markAllRead(); load(); } catch {}

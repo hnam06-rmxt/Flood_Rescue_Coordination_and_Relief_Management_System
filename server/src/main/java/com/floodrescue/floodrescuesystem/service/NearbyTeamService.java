@@ -50,15 +50,18 @@ public class NearbyTeamService {
     private final RescueTeamRepository rescueTeamRepository;
     private final UserRepository userRepository;
     private final RedisTemplate<String, Object> redisTemplate;
+    private final PostgisSpatialService postgisSpatialService;
 
     public NearbyTeamService(RescueRequestRepository rescueRequestRepository,
                              RescueTeamRepository rescueTeamRepository,
                              UserRepository userRepository,
-                             RedisTemplate<String, Object> redisTemplate) {
+                             RedisTemplate<String, Object> redisTemplate,
+                             PostgisSpatialService postgisSpatialService) {
         this.rescueRequestRepository = rescueRequestRepository;
         this.rescueTeamRepository = rescueTeamRepository;
         this.userRepository = userRepository;
         this.redisTemplate = redisTemplate;
+        this.postgisSpatialService = postgisSpatialService;
     }
 
     /**
@@ -90,13 +93,30 @@ public class NearbyTeamService {
         // Bước 1: Thử tìm bằng Redis Geo (nhanh)
         List<NearbyTeamSuggestion> suggestions = findByRedisGeo(victimLat, victimLng, limit);
 
-        // Bước 2: Fallback sang PostgreSQL nếu Redis không có kết quả
+        // Bước 2: PostGIS (chính xác không gian) nếu Redis không có kết quả
+        if (suggestions.isEmpty() && postgisSpatialService.isAvailable()) {
+            log.info("Redis Geo không có kết quả, thử PostGIS ST_Distance");
+            suggestions = findByPostgis(victimLat, victimLng, limit);
+        }
+
+        // Bước 3: Fallback Haversine trên PostgreSQL
         if (suggestions.isEmpty()) {
-            log.info("Redis Geo không có kết quả, fallback sang PostgreSQL Haversine");
+            log.info("Fallback sang PostgreSQL Haversine");
             suggestions = findByPostgresHaversine(victimLat, victimLng, limit);
         }
 
         return suggestions;
+    }
+
+    private List<NearbyTeamSuggestion> findByPostgis(double lat, double lng, int limit) {
+        List<RescueTeam> teams = postgisSpatialService.findNearestActiveTeams(lat, lng, limit);
+        return teams.stream()
+                .map(team -> {
+                    double distance = haversineDistance(lat, lng, team.getLatitude(), team.getLongitude());
+                    return buildSuggestion(team, distance);
+                })
+                .sorted(Comparator.comparingDouble(NearbyTeamSuggestion::getDistanceKm))
+                .collect(Collectors.toList());
     }
 
     /**

@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Plus, Search, MapPin, CheckCircle, ArrowRight, UserPlus, XCircle, Navigation, Radio, HeartHandshake, Eye, UserCheck, Map } from "lucide-react";
 import { rescueApi, teamApi, uploadApi } from "../services/apiService";
 import { useUserStore } from "../hooks/useUserStore";
-import type { RescueRequest, CreateRescueRequest, RescueTeam } from "../types/rescue";
+import type { RescueRequest, CreateRescueRequest, RescueTeam, NearbyTeamSuggestion } from "../types/rescue";
 
 import { MapContainer, TileLayer, Marker, useMapEvents } from "react-leaflet";
 import L from "leaflet";
@@ -24,17 +24,6 @@ function LocationPicker({ position, setPosition }: { position: [number, number],
     },
   });
   return <Marker position={position} />;
-}
-
-function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const R = 6371; // Bán kính trái đất (km)
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLon/2) * Math.sin(dLon/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  return R * c;
 }
 
 const urgencyBadge: Record<string, string> = { 
@@ -65,6 +54,8 @@ export function RescueRequestsPage() {
   const [filterStatus, setFilterStatus] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState<number | null>(null);
+  const [nearbyTeams, setNearbyTeams] = useState<NearbyTeamSuggestion[]>([]);
+  const [nearbyLoading, setNearbyLoading] = useState(false);
   const [form, setForm] = useState<CreateRescueRequest>({ description: "", location: "", latitude: 0, longitude: 0, urgencyLevel: "MEDIUM", image: "", numberOfPeople: 1 });
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [imagePreviewUrls, setImagePreviewUrls] = useState<string[]>([]);
@@ -79,6 +70,18 @@ export function RescueRequestsPage() {
     load(); 
     teamApi.getAll().then(setTeams).catch(() => {});
   }, [isCitizen, isStaff]);
+
+  useEffect(() => {
+    if (!showAssignModal) {
+      setNearbyTeams([]);
+      return;
+    }
+    setNearbyLoading(true);
+    rescueApi.getNearbyTeams(showAssignModal)
+      .then((data) => setNearbyTeams(data || []))
+      .catch(() => setNearbyTeams([]))
+      .finally(() => setNearbyLoading(false));
+  }, [showAssignModal]);
 
   async function load() {
     setLoading(true);
@@ -536,43 +539,40 @@ export function RescueRequestsPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
           <div className="card w-full max-w-md p-6 animate-fade-in">
             <h3 className="text-lg font-semibold text-ink mb-2">Điều phối đội cứu hộ</h3>
-            <p className="text-xs text-slate mb-4">Hệ thống tính toán không gian và gợi ý các đội rảnh gần nhất.</p>
+            <p className="text-xs text-slate mb-4">
+              Gợi ý từ server: Redis Geo → PostGIS → Haversine (theo thứ tự ưu tiên).
+            </p>
             <div className="space-y-2 max-h-60 overflow-y-auto">
-              {(() => {
-                const targetReq = requests.find(r => r.requestId === showAssignModal);
-                const available = teams.filter(t => t.status === "ACTIVE").map(team => {
-                  let distance = 99999;
-                  if (targetReq?.latitude && targetReq?.longitude && team.latitude && team.longitude) {
-                    distance = calculateDistance(targetReq.latitude, targetReq.longitude, team.latitude, team.longitude);
-                  }
-                  return { ...team, distance };
-                }).sort((a, b) => a.distance - b.distance);
-
-                if (available.length === 0) return <p className="text-sm text-slate py-4">Không có đội nào đang rảnh (ACTIVE)</p>;
-                return available.map((t, index) => (
-                  <button key={t.teamId} onClick={() => handleAssign(showAssignModal, t.teamId)}
-                    className={`flex items-center justify-between w-full p-3 rounded-md border transition-colors ${index < 3 ? 'border-primary bg-primary/5 hover:bg-primary/10' : 'border-hairline hover:bg-surface'}`}>
-                    <div className="text-left">
-                      <p className="text-sm font-medium text-ink flex items-center gap-2">
-                        {t.teamName} 
-                        {index === 0 && t.distance < 99999 && <span className="badge-green !py-0.5 !px-1.5 !text-[9px]">Gần nhất</span>}
+              {nearbyLoading && (
+                <p className="text-sm text-slate py-4 text-center">Đang tính toán đội gần nhất...</p>
+              )}
+              {!nearbyLoading && nearbyTeams.length === 0 && (
+                <p className="text-sm text-slate py-4">Không có đội ACTIVE gần vị trí nạn nhân (kiểm tra GPS ca và vị trí đội).</p>
+              )}
+              {!nearbyLoading && nearbyTeams.map((t, index) => (
+                <button key={t.teamId} onClick={() => handleAssign(showAssignModal, t.teamId)}
+                  className={`flex items-center justify-between w-full p-3 rounded-md border transition-colors ${index < 3 ? "border-primary bg-primary/5 hover:bg-primary/10" : "border-hairline hover:bg-surface"}`}>
+                  <div className="text-left">
+                    <p className="text-sm font-medium text-ink flex items-center gap-2">
+                      {t.teamName}
+                      {index === 0 && <span className="badge-green !py-0.5 !px-1.5 !text-[9px]">Gần nhất</span>}
+                    </p>
+                    <p className="text-xs text-slate">{t.memberCount} thành viên · {t.contactPhone}</p>
+                    {t.teamLeaderName && (
+                      <p className="text-xs text-slate">Trưởng đội: {t.teamLeaderName}</p>
+                    )}
+                    <p className="text-xs text-primary font-medium mt-0.5 flex items-center gap-1">
+                      <MapPin size={12}/> {t.distanceDisplay || `~${t.distanceKm} km`}
+                    </p>
+                    {t.vehicleNames && t.vehicleNames.length > 0 && (
+                      <p className="text-[10px] text-brand-teal font-medium mt-1">
+                        🚛 {t.vehicleNames.join(", ")}
                       </p>
-                      <p className="text-xs text-slate">{t.memberCount} thành viên · {t.contactPhone}</p>
-                      {t.distance < 99999 && (
-                        <p className="text-xs text-primary font-medium mt-0.5 flex items-center gap-1">
-                          <MapPin size={12}/> Cách ~{t.distance.toFixed(1)} km
-                        </p>
-                      )}
-                      {t.vehicleNames && t.vehicleNames.length > 0 && (
-                        <p className="text-[10px] text-brand-teal font-medium mt-1">
-                          🚛 {t.vehicleNames.join(", ")}
-                        </p>
-                      )}
-                    </div>
-                    <ArrowRight size={14} className="text-slate shrink-0" />
-                  </button>
-                ));
-              })()}
+                    )}
+                  </div>
+                  <ArrowRight size={14} className="text-slate shrink-0" />
+                </button>
+              ))}
             </div>
             <div className="mt-6">
               <button onClick={() => setShowAssignModal(null)} className="btn-secondary w-full">Đóng</button>

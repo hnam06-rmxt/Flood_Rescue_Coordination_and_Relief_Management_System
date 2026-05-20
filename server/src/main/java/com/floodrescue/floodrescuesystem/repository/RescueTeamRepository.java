@@ -43,5 +43,31 @@ public interface RescueTeamRepository extends JpaRepository<RescueTeam, Long> {
             @Param("lng") double lng,
             @Param("limit") int limit
     );
+
+    /**
+     * Kiểm tra extension PostGIS (throws nếu chưa cài).
+     */
+    @Query(value = "SELECT PostGIS_Version()", nativeQuery = true)
+    String isPostgisAvailable();
+
+    /**
+     * Tìm đội ACTIVE gần nhất bằng PostGIS ST_Distance (geography, mét → km).
+     */
+    @Query(value = """
+        SELECT t.* FROM rescue_teams t
+        WHERE t.status = 'ACTIVE'
+          AND t.latitude IS NOT NULL
+          AND t.longitude IS NOT NULL
+        ORDER BY ST_Distance(
+            ST_SetSRID(ST_MakePoint(t.longitude, t.latitude), 4326)::geography,
+            ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography
+        ) ASC
+        LIMIT :limit
+        """, nativeQuery = true)
+    List<RescueTeam> findNearestActiveTeamsPostgis(
+            @Param("lat") double lat,
+            @Param("lng") double lng,
+            @Param("limit") int limit
+    );
 }
 

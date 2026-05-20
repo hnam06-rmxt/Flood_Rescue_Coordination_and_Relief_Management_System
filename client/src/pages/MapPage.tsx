@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap, Polygon, useMapEvents, Polyline } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -7,6 +7,9 @@ import type { RescueRequest, Shelter, RescueTeam } from "../types/rescue";
 import { LifeBuoy, Shield, Layers, Truck, TriangleAlert, MapPin, Navigation, Clock, Users, Phone } from "lucide-react";
 import { useUserStore } from "../hooks/useUserStore";
 import { useSearchParams } from "react-router-dom";
+import { useDrivingRoute } from "../hooks/useDrivingRoute";
+import { RoadRoutePolyline } from "../components/RoadRoutePolyline";
+import type { LatLngTuple } from "../services/routingService";
 
 // Fix Leaflet default icon issue
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
@@ -93,6 +96,16 @@ function FlyToLocation({ position }: { position: [number, number] | null }) {
       map.flyTo(position, 15, { animate: true, duration: 1.5 });
     }
   }, [map, position]);
+  return null;
+}
+
+function FitRouteBounds({ positions }: { positions: LatLngTuple[] }) {
+  const map = useMap();
+  useEffect(() => {
+    if (positions.length >= 2) {
+      map.fitBounds(positions, { padding: [60, 60], maxZoom: 14 });
+    }
+  }, [map, positions]);
   return null;
 }
 
@@ -198,6 +211,36 @@ export function MapPage() {
     return { position: closestPos, name: sourceName };
   };
 
+  const focusRouteEndpoints = useMemo(() => {
+    if (!focusRequestId) {
+      return { from: null as LatLngTuple | null, to: null as LatLngTuple | null, originName: "" };
+    }
+    const targetReq = requests.find((r) => r.requestId === Number(focusRequestId));
+    if (!targetReq?.latitude || !targetReq?.longitude) {
+      return { from: null, to: null, originName: "" };
+    }
+
+    const to: LatLngTuple = [targetReq.latitude, targetReq.longitude];
+    const team = teams.find((t) => t.teamId === targetReq.assignedTeamId);
+    if (team?.latitude && team?.longitude) {
+      return {
+        from: [team.latitude, team.longitude] as LatLngTuple,
+        to,
+        originName: `Đội phản ứng nhanh: ${team.teamName}`,
+      };
+    }
+    if (myLocation) {
+      return { from: myLocation, to, originName: "Vị trí GPS của bạn" };
+    }
+    const nearest = getNearestTeamOrShelter(targetReq);
+    if (nearest.position) {
+      return { from: nearest.position, to, originName: `${nearest.name} (Tài nguyên gần nhất)` };
+    }
+    return { from: null, to, originName: "" };
+  }, [focusRequestId, requests, teams, myLocation, shelters]);
+
+  const focusRoute = useDrivingRoute(focusRouteEndpoints.from, focusRouteEndpoints.to);
+
   const allPositions: [number, number][] = [
     ...(showRequests ? requests.filter(r => r.latitude && r.longitude).map(r => [r.latitude, r.longitude] as [number, number]) : []),
     ...(showShelters ? shelters.filter(s => s.latitude && s.longitude).map(s => [s.latitude, s.longitude] as [number, number]) : []),
@@ -280,6 +323,9 @@ export function MapPage() {
           <FitBounds positions={allPositions} disabled={myLocation !== null || focusPosition !== null} />
           <FlyToLocation position={myLocation} />
           <FlyToLocation position={focusPosition} />
+          {focusRoute.isRoadRoute && focusRoute.positions.length >= 2 && (
+            <FitRouteBounds positions={focusRoute.positions} />
+          )}
 
           {myLocation && (
             <Marker position={myLocation} icon={myLocationIcon}>
@@ -463,105 +509,79 @@ export function MapPage() {
             </Marker>
           ))}
 
-          {/* Lộ trình kết nối đội cứu hộ và ca SOS được phân công (Lộ trình thông thường) */}
+          {/* Lộ trình đội → ca SOS (theo đường lái xe OSRM) */}
           {showRequests && showTeams && requests
             .filter(r => r.latitude && r.longitude && r.assignedTeamId && (r.status === "IN_PROGRESS" || r.status === "ASSIGNED"))
             .filter(r => r.requestId !== Number(focusRequestId))
             .map(req => {
               const team = teams.find(t => t.teamId === req.assignedTeamId);
-              if (team && team.latitude && team.longitude) {
+              if (team?.latitude && team?.longitude) {
                 return (
-                  <Polyline
+                  <RoadRoutePolyline
                     key={`route-${req.requestId}-${team.teamId}`}
-                    positions={[[team.latitude, team.longitude], [req.latitude, req.longitude]]}
+                    from={[team.latitude, team.longitude]}
+                    to={[req.latitude, req.longitude]}
                     pathOptions={{
                       color: "#2563eb",
-                      weight: 3,
+                      weight: 4,
                       dashArray: "10, 10",
                       className: "animate-dash",
-                      opacity: 0.7
+                      opacity: 0.75,
                     }}
-                  >
-                    <Popup>
+                    popupContent={
                       <div className="text-xs p-1 font-sans">
-                        Đội <strong>{team.teamName}</strong> đang di chuyển đến cứu hộ ca SOS <strong>#{req.requestId}</strong>
+                        Đội <strong>{team.teamName}</strong> → ca SOS <strong>#{req.requestId}</strong> (theo đường)
                       </div>
-                    </Popup>
-                  </Polyline>
+                    }
+                  />
                 );
               }
               return null;
-            })
-          }
+            })}
 
-          {/* TIA ĐƯỜNG DẪN ĐƯỜNG CHỈ HUY ĐẶC BIỆT (SPECIAL GLOWING TACTICAL ROUTE RAY - 3 LAYER NEON LASER) */}
-          {(() => {
-            if (!focusRequestId) return null;
-            const targetReq = requests.find(r => r.requestId === Number(focusRequestId));
-            if (!targetReq || !targetReq.latitude || !targetReq.longitude) return null;
-
-            let originPos: [number, number] | null = null;
-            let originName = "";
-
-            const team = teams.find(t => t.teamId === targetReq.assignedTeamId);
-            if (team && team.latitude && team.longitude) {
-              originPos = [team.latitude, team.longitude];
-              originName = `Đội phản ứng nhanh: ${team.teamName}`;
-            } else if (myLocation) {
-              originPos = myLocation;
-              originName = "Vị trí GPS của bạn";
-            } else {
-              const nearest = getNearestTeamOrShelter(targetReq);
-              if (nearest.position) {
-                originPos = nearest.position;
-                originName = `${nearest.name} (Tài nguyên gần nhất)`;
-              }
-            }
-
-            if (!originPos) return null;
-
-            return (
-              <g key="focused-command-route">
-                {/* 1. Outer super thick high-contrast glowing neon red ray */}
-                <Polyline
-                  positions={[originPos, [targetReq.latitude, targetReq.longitude]]}
-                  pathOptions={{
-                    color: "#f43f5e",
-                    weight: 7,
-                    opacity: 0.95,
-                    lineCap: "round",
-                    lineJoin: "round"
-                  }}
-                />
-                {/* 2. Middle animated dashed ray representing action flow */}
-                <Polyline
-                  positions={[originPos, [targetReq.latitude, targetReq.longitude]]}
-                  pathOptions={{
-                    color: "#ffffff",
-                    weight: 5,
-                    dashArray: "12, 12",
-                    className: "animate-dash",
-                    opacity: 0.9
-                  }}
-                >
-                  <Popup>
-                    <div className="text-xs p-1 font-sans">
-                      Lộ trình dẫn đường từ <strong>{originName}</strong> đến ca SOS <strong>#{targetReq.requestId}</strong>
-                    </div>
-                  </Popup>
-                </Polyline>
-                {/* 3. Inner razor sharp solid light-pink core ray for professional GIS look */}
-                <Polyline
-                  positions={[originPos, [targetReq.latitude, targetReq.longitude]]}
-                  pathOptions={{
-                    color: "#ffe4e6",
-                    weight: 2,
-                    opacity: 1.0
-                  }}
-                />
-              </g>
-            );
-          })()}
+          {/* Lộ trình chỉ đường tác chiến (OSRM — uốn theo đường thực tế) */}
+          {focusRoute.positions.length >= 2 && (
+            <>
+              <Polyline
+                positions={focusRoute.positions}
+                pathOptions={{
+                  color: "#f43f5e",
+                  weight: 7,
+                  opacity: 0.95,
+                  lineCap: "round",
+                  lineJoin: "round",
+                }}
+              />
+              <Polyline
+                positions={focusRoute.positions}
+                pathOptions={{
+                  color: "#ffffff",
+                  weight: 5,
+                  dashArray: "12, 12",
+                  className: "animate-dash",
+                  opacity: 0.9,
+                }}
+              >
+                <Popup>
+                  <div className="text-xs p-1 font-sans">
+                    {focusRoute.isRoadRoute ? "Lộ trình lái xe" : "Lộ trình ước lượng"} từ{" "}
+                    <strong>{focusRouteEndpoints.originName}</strong> đến ca SOS{" "}
+                    <strong>#{focusRequestId}</strong>
+                    {focusRoute.distanceKm != null && (
+                      <>
+                        <br />
+                        ~{focusRoute.distanceKm} km · ~{focusRoute.durationMin} phút
+                      </>
+                    )}
+                  </div>
+                </Popup>
+              </Polyline>
+              <Polyline
+                positions={focusRoute.positions}
+                pathOptions={{ color: "#ffe4e6", weight: 2, opacity: 1 }}
+              />
+            </>
+          )}
 
           {/* Vùng nguy hiểm (Geo-fencing) */}
           {dangerZones.map((zone, idx) => (
@@ -614,6 +634,19 @@ export function MapPage() {
                   <span className="text-[11px] text-red-600 font-bold">👥 Cần cứu: {targetReq.numberOfPeople} người</span>
                   <span className="text-[10px] text-slate">Thời điểm: {targetReq.createdTime ? new Date(targetReq.createdTime).toLocaleTimeString("vi-VN", {hour: '2-digit', minute:'2-digit'}) : "N/A"}</span>
                 </div>
+                {focusRoute.loading && (
+                  <p className="text-[11px] text-primary font-medium flex items-center gap-1">
+                    <Clock size={12} className="animate-spin" /> Đang tính lộ trình theo đường...
+                  </p>
+                )}
+                {!focusRoute.loading && focusRoute.isRoadRoute && focusRoute.distanceKm != null && (
+                  <p className="text-[11px] text-emerald-700 font-semibold bg-emerald-50 px-2 py-1 rounded border border-emerald-100">
+                    🛣️ ~{focusRoute.distanceKm} km · ~{focusRoute.durationMin} phút (đường lái xe)
+                  </p>
+                )}
+                {!focusRoute.loading && !focusRoute.isRoadRoute && focusRouteEndpoints.from && (
+                  <p className="text-[11px] text-amber-700">Đường thẳng (OSRM tạm không phản hồi)</p>
+                )}
                 {(() => {
                   const team = teams.find(t => t.teamId === targetReq.assignedTeamId);
                   if (team) {

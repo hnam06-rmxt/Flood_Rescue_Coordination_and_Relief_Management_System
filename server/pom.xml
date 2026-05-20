@@ -45,6 +45,12 @@
             <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
 
+        <!-- WebSocket / STOMP (real-time notifications) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
+
         <!-- Jackson Java 8 Date/Time cho Redis serialization -->
         <dependency>
             <groupId>com.fasterxml.jackson.datatype</groupId>

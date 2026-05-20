@@ -290,64 +290,6 @@ public class RescueRequestService {
     }
 
     /**
-     * Coordinator xác minh SOS hợp lệ → VERIFIED
-     */
-    @Transactional
-    public RescueRequestResponse verifyRequest(Long requestId, String notes) {
-        RescueRequest req = rescueRequestRepository.findById(requestId)
-                .orElseThrow(() -> new ResourceNotFoundException("Yêu cầu cứu hộ không tồn tại với ID: " + requestId));
-        req.setStatus(RequestStatus.VERIFIED);
-        if (notes != null && !notes.isBlank()) req.setNotes(notes);
-        req.setUpdatedTime(LocalDateTime.now());
-        RescueRequest saved = rescueRequestRepository.save(req);
-        try {
-            if (req.getUser() != null) {
-                notificationService.createNotification(
-                    req.getUser().getId(),
-                    "✅ SOS đã được xác minh",
-                    "Yêu cầu cứu hộ của bạn đã được điều phối viên xác minh và đang được xử lý.",
-                    "SOS_VERIFIED", saved.getRequestId()
-                );
-            }
-        } catch (Exception ignored) {}
-        webSocketNotificationService.broadcastStatusUpdate(saved.getRequestId(), "VERIFIED",
-            saved.getAssignedTeam() != null ? saved.getAssignedTeam().getTeamId() : null);
-        return mapToResponse(saved);
-    }
-
-    /**
-     * Citizen xác nhận đã nhận cứu trợ → RELIEF_RECEIVED
-     */
-    @Transactional
-    public RescueRequestResponse markReliefReceived(Long requestId, Long citizenId) {
-        RescueRequest req = rescueRequestRepository.findById(requestId)
-                .orElseThrow(() -> new ResourceNotFoundException("Yêu cầu cứu hộ không tồn tại với ID: " + requestId));
-        if (citizenId != null && !req.getUser().getId().equals(citizenId)) {
-            throw new BadRequestException("Bạn chỉ có thể xác nhận yêu cầu của chính mình!");
-        }
-        req.setStatus(RequestStatus.RELIEF_RECEIVED);
-        req.setUpdatedTime(LocalDateTime.now());
-        RescueRequest saved = rescueRequestRepository.save(req);
-        try {
-            // Notify all coordinators/admins
-            List<User> staff = userRepository.findAll().stream()
-                    .filter(u -> u.getRole() != null && u.getRole().getName() != null &&
-                            (u.getRole().getName().contains("ADMIN") || u.getRole().getName().contains("COORDINATOR")))
-                    .collect(Collectors.toList());
-            for (User u : staff) {
-                notificationService.createNotification(
-                    u.getId(), "Citizen xác nhận đã nhận cứu trợ",
-                    req.getUser().getFullName() + " đã xác nhận nhận được cứu trợ cho ca #" + requestId,
-                    "RELIEF_RECEIVED", requestId
-                );
-            }
-        } catch (Exception ignored) {}
-        webSocketNotificationService.broadcastStatusUpdate(saved.getRequestId(), "RELIEF_RECEIVED",
-            saved.getAssignedTeam() != null ? saved.getAssignedTeam().getTeamId() : null);
-        return mapToResponse(saved);
-    }
-
-    /**
      * Cập nhật yêu cầu cứu hộ
      */
     @Transactional
@@ -512,4 +454,4 @@ public class RescueRequestService {
         response.setProofImageUrl(rescueRequest.getProofImageUrl());
         return response;
     }
-}
+}

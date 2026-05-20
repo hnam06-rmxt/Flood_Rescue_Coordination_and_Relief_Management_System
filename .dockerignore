@@ -1,0 +1,7 @@
+.git
+.gitignore
+client/node_modules
+client/dist
+server/target
+server/logs
+*.log

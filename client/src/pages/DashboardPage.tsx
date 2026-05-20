@@ -18,19 +18,19 @@ const statCards = [
 const statusColors: Record<string, string> = {
   PENDING: "badge-orange",
   VERIFIED: "badge-blue",
-  ASSIGNED: "badge-blue", 
+  ASSIGNED: "badge-blue",
   IN_PROGRESS: "badge-purple",
   COMPLETED: "badge-green",
   RELIEF_RECEIVED: "badge-green",
   CANCELLED: "badge-red",
   REJECTED: "badge-red",
   CRITICAL: "badge-red",
-  HIGH: "badge-orange", 
-  MEDIUM: "badge-blue", 
+  HIGH: "badge-orange",
+  MEDIUM: "badge-blue",
   LOW: "badge-green",
-  EMERGENCY: "badge-red", 
-  WARNING: "badge-orange", 
-  WATCH: "badge-blue", 
+  EMERGENCY: "badge-red",
+  WARNING: "badge-orange",
+  WATCH: "badge-blue",
   ADVISORY: "badge-purple",
 };
 
@@ -53,7 +53,7 @@ function CitizenDashboard({ profile }: { profile: { fullName?: string; id?: numb
     // WebSocket: refresh khi có cập nhật trạng thái
     const unsub = wsService.subscribe("/topic/sos-updates", (msg) => {
       if (msg.type === "STATUS_UPDATE") {
-        rescueApi.getMyRequests().then(reqs => setMyRequests(reqs || [])).catch(() => {});
+        rescueApi.getMyRequests().then(reqs => setMyRequests(reqs || [])).catch(() => { });
       }
     });
     return () => unsub();
@@ -149,8 +149,8 @@ function CitizenDashboard({ profile }: { profile: { fullName?: string; id?: numb
                     </span>
                   </div>
                   <div className="mt-2 flex gap-0.5">
-                    {["PENDING","VERIFIED","ASSIGNED","IN_PROGRESS","COMPLETED"].map((s, i) => {
-                      const steps = ["PENDING","VERIFIED","ASSIGNED","IN_PROGRESS","COMPLETED","RELIEF_RECEIVED"];
+                    {["PENDING", "VERIFIED", "ASSIGNED", "IN_PROGRESS", "COMPLETED"].map((s, i) => {
+                      const steps = ["PENDING", "VERIFIED", "ASSIGNED", "IN_PROGRESS", "COMPLETED", "RELIEF_RECEIVED"];
                       const cur = steps.indexOf(req.status);
                       return <div key={s} className={`h-1 flex-1 rounded-full ${cur >= i ? "bg-primary" : "bg-surface"}`} />;
                     })}
@@ -169,10 +169,9 @@ function CitizenDashboard({ profile }: { profile: { fullName?: string; id?: numb
               <div className="p-4 text-sm text-slate">Không có cảnh báo</div>
             ) : alerts.map(a => (
               <div key={a.id} className="p-4 border-b border-hairline-soft last:border-0 hover:bg-surface-soft">
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                  a.severity === "EMERGENCY" ? "bg-red-100 text-red-700" :
-                  a.severity === "WARNING" ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"
-                }`}>{a.severity}</span>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${a.severity === "EMERGENCY" ? "bg-red-100 text-red-700" :
+                    a.severity === "WARNING" ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"
+                  }`}>{a.severity}</span>
                 <p className="text-sm font-medium text-ink mt-1">{a.title}</p>
                 <p className="text-xs text-slate mt-0.5">📍 {a.locationArea}</p>
               </div>
@@ -204,7 +203,7 @@ export function DashboardPage() {
   return <StaffDashboard profile={profile} />;
 }
 
-function StaffDashboard({ profile }: { profile: { fullName?: string; role?: string; id?: number } | null }) {
+function StaffDashboard({ profile }: { profile: { fullName?: string; role?: string | null; id?: number } | null }) {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [recentRequests, setRecentRequests] = useState<RescueRequest[]>([]);
   const [activeAlerts, setActiveAlerts] = useState<FloodAlert[]>([]);
@@ -216,33 +215,33 @@ function StaffDashboard({ profile }: { profile: { fullName?: string; role?: stri
 
   useEffect(() => {
     if (isAdmin) {
-      adminApi.getDashboard().then(setStats).catch(() => {});
+      adminApi.getDashboard().then(setStats).catch(() => { });
       reliefApi.getDistributions().then(d => {
-         const total = d?.reduce((sum, item) => sum + (item.quantity || 0), 0) || 0;
-         setTotalDistributed(total);
-      }).catch(() => {});
+        const total = d?.reduce((sum, item) => sum + (item.quantity || 0), 0) || 0;
+        setTotalDistributed(total);
+      }).catch(() => { });
     }
     rescueApi.getAll().then(r => {
       setRecentRequests(r?.slice(0, 5) || []);
       const completed = r?.filter(req => req.status === "COMPLETED") || [];
       const saved = completed.reduce((sum, req) => sum + (req.numberOfPeople || 1), 0);
       setTotalSaved(saved);
-      
+
       let totalHours = 0;
       let validCount = 0;
 
       completed.forEach(req => {
         if (req.createdTime && req.updatedTime) {
-           const cTime = new Date(req.createdTime).getTime();
-           const uTime = new Date(req.updatedTime).getTime();
-           const hours = (uTime - cTime) / (1000 * 60 * 60);
-           if (hours > 0 && hours < 24*30) { totalHours += hours; validCount++; } // Avoid negative or crazy values
+          const cTime = new Date(req.createdTime).getTime();
+          const uTime = new Date(req.updatedTime).getTime();
+          const hours = (uTime - cTime) / (1000 * 60 * 60);
+          if (hours > 0 && hours < 24 * 30) { totalHours += hours; validCount++; } // Avoid negative or crazy values
         }
       });
       if (validCount > 0) setAvgResponseTime((totalHours / validCount).toFixed(1) + "h");
       else setAvgResponseTime("< 1h");
-    }).catch(() => {});
-    alertApi.getAll().then(a => setActiveAlerts(a?.slice(0, 3) || [])).catch(() => {});
+    }).catch(() => { });
+    alertApi.getAll().then(a => setActiveAlerts(a?.slice(0, 3) || [])).catch(() => { });
   }, [isAdmin]);
 
   return (
@@ -250,14 +249,14 @@ function StaffDashboard({ profile }: { profile: { fullName?: string; role?: stri
       {/* Hero Welcome Section */}
       <div className="card !bg-brand-navy !border-none p-10 relative overflow-hidden shadow-mockup">
         <div className="absolute top-0 right-0 p-8 opacity-20 hidden md:block">
-           <LifeBuoy size={200} className="text-white rotate-12" />
+          <LifeBuoy size={200} className="text-white rotate-12" />
         </div>
         <div className="relative z-10">
           <div className="flex items-center gap-2 mb-4">
             <div className="px-2 py-0.5 rounded bg-primary text-[10px] font-bold text-white uppercase tracking-wider">Hệ thống cứu hộ v1.0</div>
             <div className="flex items-center gap-1">
-               <Activity size={12} className="text-brand-green" />
-               <span className="text-[10px] font-semibold text-brand-green uppercase tracking-wider">Trực tuyến</span>
+              <Activity size={12} className="text-brand-green" />
+              <span className="text-[10px] font-semibold text-brand-green uppercase tracking-wider">Trực tuyến</span>
             </div>
           </div>
           <h1 className="hero-display !text-4xl lg:!text-5xl text-white mb-2 leading-tight">

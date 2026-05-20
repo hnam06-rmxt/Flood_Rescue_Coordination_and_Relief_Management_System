@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, LifeBuoy, Users, Truck, Package, Shield, AlertTriangle,
-  Bell, MapPin, LogOut, Menu, X, ChevronDown, User
+  Bell, MapPin, LogOut, Menu, X, ChevronDown, User, FileBarChart, Settings
 } from "lucide-react";
 import { authActions } from "../store/authStore";
 import { userActions } from "../store/userStore";
@@ -21,7 +21,9 @@ const navItems: NavItem[] = [
   { label: "Điểm an toàn", path: "/shelters", icon: <Shield size={18} />, roles: ["CITIZEN", "COORDINATOR", "RESCUER", "MANAGER", "ADMIN"] },
   { label: "Cảnh báo lũ", path: "/alerts", icon: <AlertTriangle size={18} />, roles: ["CITIZEN", "COORDINATOR", "RESCUER", "MANAGER", "ADMIN"] },
   { label: "Thông báo", path: "/notifications", icon: <Bell size={18} /> },
+  { label: "Báo cáo", path: "/reports", icon: <FileBarChart size={18} />, roles: ["ADMIN", "COORDINATOR", "MANAGER"] },
   { label: "Quản lý Users", path: "/admin/users", icon: <Users size={18} />, roles: ["ADMIN"] },
+  { label: "Cấu hình", path: "/settings", icon: <Settings size={18} />, roles: ["ADMIN"] },
 ];
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {

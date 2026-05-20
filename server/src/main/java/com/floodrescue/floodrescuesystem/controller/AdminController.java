@@ -29,8 +29,8 @@ public class AdminController {
     // ========== User Management ==========
 
     @GetMapping("/users")
-    @org.springframework.security.access.prepost.PreAuthorize("hasRole('ADMIN')")
-    @Operation(summary = "Danh sách người dùng", description = "Admin xem tất cả người dùng trong hệ thống")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN', 'COORDINATOR')")
+    @Operation(summary = "Danh sách người dùng", description = "Admin và Điều phối viên xem tất cả người dùng trong hệ thống")
     public ApiResponse<List<UserProfileResponse>> getAllUsers() {
         return ApiResponse.success("All users retrieved", adminService.getAllUsers());
     }

@@ -3,6 +3,26 @@ import { Plus, Users, Phone, MapPin, User as UserIcon, Edit, Trash2 } from "luci
 import { teamApi, adminApi } from "../services/apiService";
 import type { RescueTeam } from "../types/rescue";
 import type { UserProfile } from "../types/user";
+import { MapContainer, TileLayer, Marker, useMapEvents } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+
+// Fix Leaflet default icon issue
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png",
+  iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png",
+  shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
+});
+
+function LocationPicker({ position, setPosition }: { position: [number, number], setPosition: (pos: [number, number]) => void }) {
+  useMapEvents({
+    click(e) {
+      setPosition([e.latlng.lat, e.latlng.lng]);
+    },
+  });
+  return <Marker position={position} />;
+}
 
 const statusBadge: Record<string, string> = { 
   ACTIVE: "badge-green", 
@@ -20,6 +40,8 @@ export function TeamsPage() {
     contactPhone: "",
     status: "ACTIVE",
     currentLocation: "",
+    latitude: 16.047079,
+    longitude: 108.206230,
     description: "",
     teamLeaderId: ""
   });
@@ -31,6 +53,8 @@ export function TeamsPage() {
     contactPhone: "",
     status: "ACTIVE",
     currentLocation: "",
+    latitude: 16.047079,
+    longitude: 108.206230,
     description: "",
     teamLeaderId: ""
   });
@@ -64,7 +88,7 @@ export function TeamsPage() {
       });
       setShowForm(false);
       load();
-      setForm({ teamName: "", memberCount: 5, contactPhone: "", status: "ACTIVE", currentLocation: "", description: "", teamLeaderId: "" });
+      setForm({ teamName: "", memberCount: 5, contactPhone: "", status: "ACTIVE", currentLocation: "", latitude: 16.047079, longitude: 108.206230, description: "", teamLeaderId: "" });
     } catch (err) {
       console.error("Create team failed:", err);
       alert("Tạo đội thất bại. Vui lòng kiểm tra lại thông tin.");
@@ -79,6 +103,8 @@ export function TeamsPage() {
       contactPhone: t.contactPhone,
       status: t.status,
       currentLocation: t.currentLocation,
+      latitude: t.latitude || 16.047079,
+      longitude: t.longitude || 108.206230,
       description: t.description || "",
       teamLeaderId: t.teamLeaderId ? t.teamLeaderId.toString() : ""
     });
@@ -136,9 +162,9 @@ export function TeamsPage() {
             <div>
               <label className="block text-sm font-medium mb-1">Đội trưởng</label>
               <select className="input-field" value={form.teamLeaderId} onChange={e => setForm({ ...form, teamLeaderId: e.target.value })} required>
-                <option value="">{users.filter(u => u.role === "RESCUER").length === 0 ? "-- Không có nhân viên cứu hộ nào --" : "-- Chọn đội trưởng --"}</option>
-                {users.filter(u => u.role === "RESCUER").map(u => (
-                  <option key={u.id} value={u.id}>{u.fullName} ({u.username})</option>
+                <option value="">{users.filter(u => u.role !== "CITIZEN").length === 0 ? "-- Không có nhân sự nào hợp lệ --" : "-- Chọn đội trưởng --"}</option>
+                {users.filter(u => u.role !== "CITIZEN").map(u => (
+                  <option key={u.id} value={u.id}>{u.fullName} ({u.role})</option>
                 ))}
               </select>
               {users.length === 0 && (
@@ -157,7 +183,19 @@ export function TeamsPage() {
             </div>
             <div className="md:col-span-2">
               <label className="block text-sm font-medium mb-1">Vị trí hiện tại</label>
-              <input className="input-field" value={form.currentLocation} onChange={e => setForm({ ...form, currentLocation: e.target.value })} required />
+              <input className="input-field mb-2" value={form.currentLocation} onChange={e => setForm({ ...form, currentLocation: e.target.value })} required placeholder="Nhập tên địa chỉ..." />
+              <div className="h-48 rounded-lg overflow-hidden border border-hairline relative z-0">
+                <MapContainer center={[form.latitude, form.longitude]} zoom={12} className="w-full h-full">
+                  <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                  <LocationPicker 
+                    position={[form.latitude, form.longitude]} 
+                    setPosition={(pos) => setForm({ ...form, latitude: pos[0], longitude: pos[1] })} 
+                  />
+                </MapContainer>
+                <div className="absolute inset-x-0 bottom-0 p-1.5 bg-white/80 backdrop-blur-sm text-[10px] text-center text-slate border-t border-hairline z-[1000] pointer-events-none">
+                  Click lên bản đồ để chọn tọa độ GPS cho đội cứu hộ
+                </div>
+              </div>
             </div>
             <div className="md:col-span-2">
               <label className="block text-sm font-medium mb-1">Mô tả</label>
@@ -241,9 +279,9 @@ export function TeamsPage() {
               <div>
                 <label className="block text-sm font-medium mb-1">Đội trưởng</label>
                 <select className="input-field" value={editForm.teamLeaderId} onChange={e => setEditForm({ ...editForm, teamLeaderId: e.target.value })} required>
-                  <option value="">-- Chọn đội trưởng --</option>
-                  {users.filter(u => u.role === "RESCUER").map(u => (
-                    <option key={u.id} value={u.id}>{u.fullName} ({u.username})</option>
+                  <option value="">{users.filter(u => u.role !== "CITIZEN").length === 0 ? "-- Không có nhân sự nào hợp lệ --" : "-- Chọn đội trưởng --"}</option>
+                  {users.filter(u => u.role !== "CITIZEN").map(u => (
+                    <option key={u.id} value={u.id}>{u.fullName} ({u.role})</option>
                   ))}
                 </select>
               </div>
@@ -257,7 +295,19 @@ export function TeamsPage() {
               </div>
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium mb-1">Vị trí hiện tại</label>
-                <input className="input-field" value={editForm.currentLocation} onChange={e => setEditForm({ ...editForm, currentLocation: e.target.value })} required />
+                <input className="input-field mb-2" value={editForm.currentLocation} onChange={e => setEditForm({ ...editForm, currentLocation: e.target.value })} required placeholder="Nhập tên địa chỉ..." />
+                <div className="h-48 rounded-lg overflow-hidden border border-hairline relative z-0">
+                  <MapContainer center={[editForm.latitude, editForm.longitude]} zoom={12} className="w-full h-full">
+                    <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                    <LocationPicker 
+                      position={[editForm.latitude, editForm.longitude]} 
+                      setPosition={(pos) => setEditForm({ ...editForm, latitude: pos[0], longitude: pos[1] })} 
+                    />
+                  </MapContainer>
+                  <div className="absolute inset-x-0 bottom-0 p-1.5 bg-white/80 backdrop-blur-sm text-[10px] text-center text-slate border-t border-hairline z-[1000] pointer-events-none">
+                    Click lên bản đồ để cập nhật tọa độ GPS
+                  </div>
+                </div>
               </div>
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium mb-1">Mô tả</label>

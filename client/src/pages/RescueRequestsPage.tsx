@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Plus, Search, MapPin, CheckCircle, ArrowRight, UserPlus, XCircle, Navigation, Radio, HeartHandshake, Eye, UserCheck, Map } from "lucide-react";
 import { rescueApi, teamApi, uploadApi } from "../services/apiService";
 import { useUserStore } from "../hooks/useUserStore";
@@ -51,6 +52,7 @@ const statusBadge: Record<string, string> = {
 };
 
 export function RescueRequestsPage() {
+  const navigate = useNavigate();
   const profile = useUserStore(s => s.profile);
   const isCitizen = profile?.role === "CITIZEN";
   const isAdmin = profile?.role === "ADMIN" || profile?.role === "COORDINATOR";
@@ -511,16 +513,14 @@ export function RescueRequestsPage() {
                       )}
                       {/* FR-3.2 Navigation */}
                       {(isStaff || isCitizen) && ["ASSIGNED", "IN_PROGRESS"].includes(req.status) && req.latitude && req.longitude && (
-                        <a href={(() => {
-                           const team = teams.find(t => t.teamId === req.assignedTeamId);
-                           if (team && team.latitude && team.longitude) {
-                             return `https://www.google.com/maps/dir/?api=1&origin=${team.latitude},${team.longitude}&destination=${req.latitude},${req.longitude}`;
-                           }
-                           return `https://www.google.com/maps/dir/?api=1&destination=${req.latitude},${req.longitude}`;
-                        })()} target="_blank" rel="noreferrer"
-                          className="btn-secondary !py-1 !px-2 text-xs border-link text-link hover:bg-link hover:text-white flex items-center gap-1">
+                        <button
+                          onClick={() => {
+                            navigate(`/map?focusRequest=${req.requestId}&focusTeam=${req.assignedTeamId || ""}`);
+                          }}
+                          className="btn-secondary !py-1 !px-2 text-xs border-link text-link hover:bg-link hover:text-white flex items-center gap-1"
+                        >
                           <Navigation size={14} /> Dẫn đường
-                        </a>
+                        </button>
                       )}
                     </div>
                   </td>
@@ -625,15 +625,36 @@ export function RescueRequestsPage() {
                     <span>{selectedRequestDetails.location}</span>
                   </p>
                   {selectedRequestDetails.latitude && selectedRequestDetails.longitude && (
-                    <div className="mt-2 flex gap-2">
-                      <a href={`https://www.google.com/maps/dir/?api=1&destination=${selectedRequestDetails.latitude},${selectedRequestDetails.longitude}`} target="_blank" rel="noreferrer"
-                        className="btn-secondary !py-1 !px-2.5 text-xs border-link text-link hover:bg-link hover:text-white flex items-center gap-1">
-                        <Navigation size={12} /> Dẫn đường (Google Maps)
-                      </a>
-                      <span className="text-[10px] text-slate self-center">
-                        GPS: {selectedRequestDetails.latitude.toFixed(6)}, {selectedRequestDetails.longitude.toFixed(6)}
-                      </span>
-                    </div>
+                    <>
+                      <div className="mt-2 flex gap-2">
+                        <button
+                          onClick={() => {
+                            navigate(`/map?focusRequest=${selectedRequestDetails.requestId}&focusTeam=${selectedRequestDetails.assignedTeamId || ""}`);
+                          }}
+                          className="btn-secondary !py-1 !px-2.5 text-xs border-link text-link hover:bg-link hover:text-white flex items-center gap-1"
+                        >
+                          <Navigation size={12} /> Dẫn đường tích hợp
+                        </button>
+                        <span className="text-[10px] text-slate self-center">
+                          GPS: {selectedRequestDetails.latitude.toFixed(6)}, {selectedRequestDetails.longitude.toFixed(6)}
+                        </span>
+                      </div>
+                      
+                      <div className="mt-3 rounded-lg overflow-hidden border border-hairline-soft h-40 relative z-0 shadow-sm">
+                        <MapContainer 
+                          center={[selectedRequestDetails.latitude, selectedRequestDetails.longitude]} 
+                          zoom={14} 
+                          className="w-full h-full"
+                          zoomControl={false}
+                          dragging={false}
+                          scrollWheelZoom={false}
+                        >
+                          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                          <Marker position={[selectedRequestDetails.latitude, selectedRequestDetails.longitude]} />
+                        </MapContainer>
+                        <div className="absolute inset-0 z-[1000] pointer-events-none shadow-[inset_0_0_12px_rgba(0,0,0,0.1)] rounded-lg"></div>
+                      </div>
+                    </>
                   )}
                 </div>
               </div>

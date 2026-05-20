@@ -18,6 +18,8 @@ import { AlertsPage } from "./pages/AlertsPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { AdminUsersPage } from "./pages/AdminUsersPage";
 import { ProfilePage } from "./pages/ProfilePage";
+import { ReportsPage } from "./pages/ReportsPage";
+import { SettingsPage } from "./pages/SettingsPage";
 import { DashboardLayout } from "./layouts/DashboardLayout";
 
 function PublicOnlyRoute({ children }: { children: ReactElement }) {
@@ -92,6 +94,8 @@ export default function App() {
       <Route path="/alerts" element={<DashboardRoute allowedRoles={["CITIZEN", "COORDINATOR", "RESCUER", "MANAGER", "ADMIN"]}><AlertsPage /></DashboardRoute>} />
       <Route path="/notifications" element={<DashboardRoute><NotificationsPage /></DashboardRoute>} />
       <Route path="/admin/users" element={<DashboardRoute allowedRoles={["ADMIN"]}><AdminUsersPage /></DashboardRoute>} />
+      <Route path="/reports" element={<DashboardRoute allowedRoles={["ADMIN", "COORDINATOR", "MANAGER"]}><ReportsPage /></DashboardRoute>} />
+      <Route path="/settings" element={<DashboardRoute allowedRoles={["ADMIN"]}><SettingsPage /></DashboardRoute>} />
       <Route path="/profile" element={<DashboardRoute><ProfilePage /></DashboardRoute>} />
 
       <Route path="*" element={<Navigate replace to={isAuthenticated ? "/dashboard" : "/login"} />} />

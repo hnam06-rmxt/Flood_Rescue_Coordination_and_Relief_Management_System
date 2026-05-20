@@ -99,10 +99,13 @@ export function LoginPage() {
 
           {/* Quick login hints */}
           <div className="mt-8 p-4 rounded-lg bg-surface border border-hairline">
-            <p className="text-xs font-medium text-slate mb-2">Tài khoản test:</p>
-            <div className="grid grid-cols-2 gap-1.5 text-xs text-ink">
-              <span>admin / admin123</span>
-              <span>demo / demo123</span>
+            <p className="text-xs font-medium text-slate mb-2">Điền nhanh tài khoản test:</p>
+            <div className="flex flex-wrap gap-2 text-xs">
+              <button type="button" onClick={() => setForm({ username: "admin", password: "admin123" })} className="px-2 py-1 bg-white border border-hairline rounded hover:bg-surface-soft hover:border-primary text-ink transition-colors">Admin</button>
+              <button type="button" onClick={() => setForm({ username: "Manager", password: "demo123" })} className="px-2 py-1 bg-white border border-hairline rounded hover:bg-surface-soft hover:border-primary text-ink transition-colors">Manager</button>
+              <button type="button" onClick={() => setForm({ username: "citizen", password: "123456" })} className="px-2 py-1 bg-white border border-hairline rounded hover:bg-surface-soft hover:border-primary text-ink transition-colors">Citizen</button>
+              <button type="button" onClick={() => setForm({ username: "RescueTeam", password: "123456" })} className="px-2 py-1 bg-white border border-hairline rounded hover:bg-surface-soft hover:border-primary text-ink transition-colors">RescueTeam</button>
+              <button type="button" onClick={() => setForm({ username: "Coordinator", password: "123456" })} className="px-2 py-1 bg-white border border-hairline rounded hover:bg-surface-soft hover:border-primary text-ink transition-colors">Coordinator</button>
             </div>
           </div>
         </div>

@@ -39,6 +39,8 @@ public class RescueTeamService {
         team.setMemberCount(request.getMemberCount() != null ? request.getMemberCount() : 1);
         team.setContactPhone(request.getContactPhone());
         team.setCurrentLocation(request.getCurrentLocation());
+        team.setLatitude(request.getLatitude());
+        team.setLongitude(request.getLongitude());
         team.setStatus(RescueTeam.TeamStatus.ACTIVE);
 
         RescueTeam saved = rescueTeamRepository.save(team);
@@ -96,6 +98,8 @@ public class RescueTeamService {
         team.setMemberCount(request.getMemberCount() != null ? request.getMemberCount() : 1);
         team.setContactPhone(request.getContactPhone());
         team.setCurrentLocation(request.getCurrentLocation());
+        team.setLatitude(request.getLatitude());
+        team.setLongitude(request.getLongitude());
 
         RescueTeam saved = rescueTeamRepository.save(team);
         return RescueTeamResponse.fromEntity(saved, leader.getFullName());

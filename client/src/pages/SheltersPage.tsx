@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
-import { Plus, Shield, MapPin, Users as UsersIcon, Edit2, Trash2 } from "lucide-react";
+import { Plus, Shield, MapPin, Users as UsersIcon, Edit2, Trash2, Navigation, X } from "lucide-react";
 import { shelterApi } from "../services/apiService";
 import type { Shelter } from "../types/rescue";
 import { useUserStore } from "../hooks/useUserStore";
+import { useDrivingRoute } from "../hooks/useDrivingRoute";
+import type { LatLngTuple } from "../services/routingService";
 
-import { MapContainer, TileLayer, Marker, useMapEvents } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -25,17 +27,33 @@ function LocationPicker({ position, setPosition }: { position: [number, number],
   return <Marker position={position} />;
 }
 
+function FitRouteBounds({ positions }: { positions: LatLngTuple[] }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (positions.length < 2) return;
+    map.fitBounds(L.latLngBounds(positions), { padding: [24, 24] });
+  }, [map, positions]);
+
+  return null;
+}
+
 export function SheltersPage() {
   const profile = useUserStore(s => s.profile);
   const userRole = profile?.role || "";
   const isAuthorized = userRole === "ADMIN" || userRole === "MANAGER";
+  const isCitizen = userRole === "CITIZEN";
 
   const [shelters, setShelters] = useState<Shelter[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editingShelter, setEditingShelter] = useState<Shelter | null>(null);
+  const [routeTarget, setRouteTarget] = useState<Shelter | null>(null);
+  const [routeStart, setRouteStart] = useState<LatLngTuple | null>(null);
+  const [locatingRoute, setLocatingRoute] = useState<number | null>(null);
   
   const [form, setForm] = useState({ name: "", location: "", latitude: 15.825, longitude: 108.236, capacity: 100, currentOccupancy: 0, status: "OPEN", contactInfo: "" });
   const [editForm, setEditForm] = useState({ name: "", location: "", latitude: 15.825, longitude: 108.236, capacity: 100, currentOccupancy: 0, status: "OPEN", contactInfo: "" });
+  const shelterRoute = useDrivingRoute(routeStart, routeTarget ? [routeTarget.latitude, routeTarget.longitude] : null);
 
   useEffect(() => { load(); }, []);
   async function load() { 
@@ -112,6 +130,39 @@ export function SheltersPage() {
     } catch (err: any) {
       alert("Cập nhật số lượng người thất bại: " + (err.response?.data?.message || err.message));
     }
+  }
+
+  function findRouteToShelter(shelter: Shelter) {
+    if (!shelter.latitude || !shelter.longitude) {
+      alert("Điểm an toàn này chưa có tọa độ để tìm đường.");
+      return;
+    }
+    if (!navigator.geolocation) {
+      alert("Trình duyệt không hỗ trợ định vị GPS.");
+      return;
+    }
+
+    setLocatingRoute(shelter.id);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setRouteStart([position.coords.latitude, position.coords.longitude]);
+        setRouteTarget(shelter);
+        setLocatingRoute(null);
+      },
+      (error) => {
+        console.error("Get route location failed:", error);
+        setLocatingRoute(null);
+        alert("Không lấy được vị trí hiện tại. Vui lòng bật quyền truy cập vị trí rồi thử lại.");
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  }
+
+  function openExternalDirections() {
+    if (!routeStart || !routeTarget) return;
+    const [fromLat, fromLng] = routeStart;
+    const url = `https://www.google.com/maps/dir/?api=1&origin=${fromLat},${fromLng}&destination=${routeTarget.latitude},${routeTarget.longitude}&travelmode=driving`;
+    window.open(url, "_blank", "noopener,noreferrer");
   }
 
   return (
@@ -222,6 +273,50 @@ export function SheltersPage() {
         </div>
       )}
 
+      {isCitizen && routeTarget && routeStart && (
+        <div className="card p-4 space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-ink flex items-center gap-1.5">
+                <Navigation size={16} className="text-brand-teal" /> Tuyến đường tới {routeTarget.name}
+              </h2>
+              <p className="text-xs text-slate mt-1">
+                {shelterRoute.loading
+                  ? "Đang tính tuyến đường..."
+                  : shelterRoute.distanceKm
+                    ? `${shelterRoute.distanceKm} km, khoảng ${shelterRoute.durationMin} phút`
+                    : "Đang hiển thị đường thẳng dự phòng khi không lấy được tuyến đường thực tế."}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={openExternalDirections} className="btn-secondary !py-1.5 !px-2 text-xs">
+                Mở Google Maps
+              </button>
+              <button type="button" onClick={() => { setRouteTarget(null); setRouteStart(null); }} className="p-2 rounded hover:bg-surface" title="Đóng tuyến đường">
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+
+          <div className="h-[320px] w-full rounded-md border border-hairline overflow-hidden relative z-0">
+            <MapContainer center={routeStart} zoom={13} className="h-full w-full">
+              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+              <FitRouteBounds positions={shelterRoute.positions.length >= 2 ? shelterRoute.positions : [routeStart, [routeTarget.latitude, routeTarget.longitude]]} />
+              <Marker position={routeStart}>
+                <Popup>Vị trí của bạn</Popup>
+              </Marker>
+              <Marker position={[routeTarget.latitude, routeTarget.longitude]}>
+                <Popup>{routeTarget.name}</Popup>
+              </Marker>
+              <Polyline
+                positions={shelterRoute.positions.length >= 2 ? shelterRoute.positions : [routeStart, [routeTarget.latitude, routeTarget.longitude]]}
+                pathOptions={{ color: "#0f766e", weight: 5, opacity: 0.85 }}
+              />
+            </MapContainer>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {shelters.length === 0 ? (
           <div className="col-span-full card p-8 text-center text-slate">Không tìm thấy điểm an toàn nào</div>
@@ -284,6 +379,17 @@ export function SheltersPage() {
                       style={{ width: `${Math.min(occupancyPct, 100)}%` }} />
                   </div>
                 </div>
+                {isCitizen && (
+                  <button
+                    type="button"
+                    onClick={() => findRouteToShelter(s)}
+                    disabled={locatingRoute === s.id || s.status !== "OPEN"}
+                    className="btn-primary mt-4 w-full justify-center text-xs disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    <Navigation size={14} />
+                    {locatingRoute === s.id ? "Đang lấy vị trí..." : "Tìm đường tới đây"}
+                  </button>
+                )}
               </div>
             );
           })

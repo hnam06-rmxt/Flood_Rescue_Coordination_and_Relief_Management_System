@@ -1,8 +1,12 @@
 package com.floodrescue.floodrescuesystem.controller;
 
 import com.floodrescue.floodrescuesystem.dto.request.AssignTeamRequest;
+import com.floodrescue.floodrescuesystem.dto.request.CancelRescueRequest;
+import com.floodrescue.floodrescuesystem.dto.request.CompleteRescueRequest;
 import com.floodrescue.floodrescuesystem.dto.request.CreateRescueRequestDTO;
+import com.floodrescue.floodrescuesystem.dto.request.RejectRescueRequest;
 import com.floodrescue.floodrescuesystem.dto.request.UpdateStatusRequest;
+import com.floodrescue.floodrescuesystem.dto.request.UpdateUrgencyRequest;
 import com.floodrescue.floodrescuesystem.dto.response.ApiResponse;
 import com.floodrescue.floodrescuesystem.dto.response.NearbyTeamSuggestion;
 import com.floodrescue.floodrescuesystem.dto.response.RescueRequestResponse;
@@ -59,8 +63,10 @@ public class RescueRequestController {
 
     @PatchMapping("/{id}/confirm-rescued")
     @Operation(summary = "Xác nhận đã được cứu hộ", description = "Citizen xác nhận đã được cứu hộ / nhận cứu trợ")
-    public ApiResponse<RescueRequestResponse> confirmRescued(@PathVariable Long id) {
-        RescueRequestResponse response = rescueRequestService.updateRescueRequestStatus(id, "COMPLETED");
+    public ApiResponse<RescueRequestResponse> confirmRescued(@PathVariable Long id, Authentication auth) {
+        User user = userRepository.findByUsername(auth.getName())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        RescueRequestResponse response = rescueRequestService.confirmRescued(id, user.getId());
         return ApiResponse.success("Confirmed rescued successfully", response);
     }
 
@@ -145,6 +151,51 @@ public class RescueRequestController {
         return ApiResponse.success("Request verified", rescueRequestService.verifyRequest(id, notes));
     }
 
+    @PatchMapping("/{id}/start")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN', 'COORDINATOR', 'RESCUER')")
+    @Operation(summary = "Bắt đầu cứu hộ", description = "Đội cứu hộ chuyển ca được phân công sang đang xử lý")
+    public ApiResponse<RescueRequestResponse> startRescue(@PathVariable Long id) {
+        return ApiResponse.success("Rescue request started", rescueRequestService.startRescue(id));
+    }
+
+    @PatchMapping("/{id}/reject")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN', 'COORDINATOR')")
+    @Operation(summary = "Từ chối SOS", description = "Coordinator từ chối yêu cầu SOS không hợp lệ")
+    public ApiResponse<RescueRequestResponse> rejectRequest(
+            @PathVariable Long id,
+            @RequestBody(required = false) RejectRescueRequest request) {
+        String reason = request != null ? request.getReason() : null;
+        return ApiResponse.success("Request rejected", rescueRequestService.rejectRequest(id, reason));
+    }
+
+    @PatchMapping("/{id}/cancel")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN', 'COORDINATOR', 'CITIZEN')")
+    @Operation(summary = "Hủy yêu cầu SOS", description = "Citizen hủy yêu cầu của mình hoặc staff hủy ca không thể tiếp tục")
+    public ApiResponse<RescueRequestResponse> cancelRequest(
+            Authentication auth,
+            @PathVariable Long id,
+            @RequestBody(required = false) CancelRescueRequest request) {
+        User user = userRepository.findByUsername(auth.getName())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        boolean isCitizen = auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_CITIZEN") || a.getAuthority().equals("CITIZEN"));
+        String reason = request != null ? request.getReason() : null;
+        RescueRequestResponse response = rescueRequestService.cancelRequest(id, user.getId(), isCitizen, reason);
+        return ApiResponse.success("Request cancelled", response);
+    }
+
+    @PatchMapping("/{id}/complete")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN', 'COORDINATOR', 'RESCUER')")
+    @Operation(summary = "Hoàn thành cứu hộ", description = "Rescuer/Coordinator hoàn thành ca cứu hộ kèm ghi chú và ảnh minh chứng")
+    public ApiResponse<RescueRequestResponse> completeRequest(
+            @PathVariable Long id,
+            @RequestBody(required = false) CompleteRescueRequest request) {
+        String notes = request != null ? request.getNotes() : null;
+        String proofImageUrl = request != null ? request.getProofImageUrl() : null;
+        RescueRequestResponse response = rescueRequestService.completeRequest(id, notes, proofImageUrl);
+        return ApiResponse.success("Request completed", response);
+    }
+
     @PatchMapping("/{id}/status")
     @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN', 'COORDINATOR', 'RESCUER', 'CITIZEN')")
     @Operation(summary = "Cập nhật trạng thái yêu cầu", description = "Cập nhật trạng thái xử lý yêu cầu")
@@ -181,8 +232,8 @@ public class RescueRequestController {
     @Operation(summary = "Cập nhật mức độ khẩn cấp", description = "Coordinator thay đổi mức độ khẩn cấp của yêu cầu")
     public ApiResponse<RescueRequestResponse> updateUrgency(
             @PathVariable Long id,
-            @RequestBody UpdateStatusRequest request) { // Tái sử dụng class UpdateStatusRequest cho tiện (bên trong có trường status, ta gửi urgency qua trường status)
-        RescueRequestResponse response = rescueRequestService.updateRescueRequestUrgency(id, request.getStatus());
+            @RequestBody UpdateUrgencyRequest request) {
+        RescueRequestResponse response = rescueRequestService.updateRescueRequestUrgency(id, request.getUrgencyLevel());
         return ApiResponse.success("Urgency updated successfully", response);
     }
 

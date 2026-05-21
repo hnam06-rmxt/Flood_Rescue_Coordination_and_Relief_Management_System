@@ -200,6 +200,45 @@ public class RescueRequestService {
     }
 
     @Transactional
+    public RescueRequestResponse startRescue(Long requestId) {
+        return updateRescueRequestStatus(requestId, RequestStatus.IN_PROGRESS.name(), null, null);
+    }
+
+    @Transactional
+    public RescueRequestResponse completeRequest(Long requestId, String notes, String proofImageUrl) {
+        return updateRescueRequestStatus(requestId, RequestStatus.COMPLETED.name(), notes, proofImageUrl);
+    }
+
+    @Transactional
+    public RescueRequestResponse rejectRequest(Long requestId, String reason) {
+        return updateRescueRequestStatus(requestId, RequestStatus.REJECTED.name(), reason, null);
+    }
+
+    @Transactional
+    public RescueRequestResponse cancelRequest(Long requestId, Long userId, boolean citizenOnly, String reason) {
+        RescueRequest req = rescueRequestRepository.findById(requestId)
+                .orElseThrow(() -> new ResourceNotFoundException("Rescue request not found with ID: " + requestId));
+
+        if (citizenOnly && (req.getUser() == null || !req.getUser().getId().equals(userId))) {
+            throw new BadRequestException("You can only cancel your own request.");
+        }
+
+        return updateRescueRequestStatus(requestId, RequestStatus.CANCELLED.name(), reason, null);
+    }
+
+    @Transactional
+    public RescueRequestResponse confirmRescued(Long requestId, Long citizenId) {
+        RescueRequest req = rescueRequestRepository.findById(requestId)
+                .orElseThrow(() -> new ResourceNotFoundException("Rescue request not found with ID: " + requestId));
+
+        if (citizenId != null && (req.getUser() == null || !req.getUser().getId().equals(citizenId))) {
+            throw new BadRequestException("You can only confirm your own request.");
+        }
+
+        return updateRescueRequestStatus(requestId, RequestStatus.COMPLETED.name(), null, null);
+    }
+
+    @Transactional
     public RescueRequestResponse updateRescueRequestStatus(Long requestId, String status, String notes,
             String proofImageUrl) {
         RescueRequest rescueRequest = rescueRequestRepository.findById(requestId)

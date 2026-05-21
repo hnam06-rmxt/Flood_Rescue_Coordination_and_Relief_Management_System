@@ -19,7 +19,12 @@ export const rescueApi = {
   update: (id: number, d: CreateRescueRequest) => http.put<ApiResponse<RescueRequest>>(`/rescue-requests/${id}`, d).then(r => r.data.data),
   updateStatus: (id: number, status: string, notes?: string, proofImageUrl?: string) =>
     http.patch<ApiResponse<RescueRequest>>(`/rescue-requests/${id}/status`, { status, notes, proofImageUrl }).then(r => r.data.data),
-  updateUrgency: (id: number, urgency: string) => http.patch<ApiResponse<RescueRequest>>(`/rescue-requests/${id}/urgency`, { status: urgency }).then(r => r.data.data),
+  startRescue: (id: number) => http.patch<ApiResponse<RescueRequest>>(`/rescue-requests/${id}/start`).then(r => r.data.data),
+  rejectRequest: (id: number, reason?: string) => http.patch<ApiResponse<RescueRequest>>(`/rescue-requests/${id}/reject`, { reason }).then(r => r.data.data),
+  cancelRequest: (id: number, reason?: string) => http.patch<ApiResponse<RescueRequest>>(`/rescue-requests/${id}/cancel`, { reason }).then(r => r.data.data),
+  completeRequest: (id: number, notes?: string, proofImageUrl?: string) =>
+    http.patch<ApiResponse<RescueRequest>>(`/rescue-requests/${id}/complete`, { notes, proofImageUrl }).then(r => r.data.data),
+  updateUrgency: (id: number, urgencyLevel: string) => http.patch<ApiResponse<RescueRequest>>(`/rescue-requests/${id}/urgency`, { urgencyLevel }).then(r => r.data.data),
   getNearbyTeams: (id: number) => http.get<ApiResponse<NearbyTeamSuggestion[]>>(`/rescue-requests/${id}/nearby-teams`).then(r => r.data.data),
   assignTeam: (id: number, teamId: number) => http.patch<ApiResponse<RescueRequest>>(`/rescue-requests/${id}/assign`, { teamId }).then(r => r.data.data),
   confirmRescued: (id: number) => http.patch<ApiResponse<RescueRequest>>(`/rescue-requests/${id}/confirm-rescued`).then(r => r.data.data),

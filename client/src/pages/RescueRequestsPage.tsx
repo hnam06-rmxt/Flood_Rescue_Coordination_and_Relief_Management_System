@@ -194,14 +194,25 @@ export function RescueRequestsPage() {
     );
   }
 
-  async function updateStatus(id: number, status: string) {
-    if (!confirm(`Xác nhận chuyển trạng thái sang ${statusLabel[status] || status}?`)) return;
+  async function handleStartRescue(id: number) {
+    if (!confirm(`Xác nhận chuyển trạng thái sang ${statusLabel.IN_PROGRESS}?`)) return;
     try { 
-      await rescueApi.updateStatus(id, status); 
+      await rescueApi.startRescue(id); 
       load(); 
     } catch (err) {
       console.error("Update status failed:", err);
       alert("Cập nhật trạng thái thất bại. Vui lòng kiểm tra lại.");
+    }
+  }
+
+  async function handleCancelRequest(id: number, reason?: string) {
+    if (!confirm(`Xác nhận chuyển trạng thái sang ${statusLabel.CANCELLED}?`)) return;
+    try {
+      await rescueApi.cancelRequest(id, reason);
+      load();
+    } catch (err) {
+      console.error("Cancel request failed:", err);
+      alert("Hủy yêu cầu thất bại. Vui lòng kiểm tra lại.");
     }
   }
 
@@ -213,7 +224,7 @@ export function RescueRequestsPage() {
 
   async function handleReject(id: number) {
     if (!confirm("Từ chối SOS này? Hành động này không thể hoàn tác.")) return;
-    try { await rescueApi.updateStatus(id, "REJECTED"); load(); }
+    try { await rescueApi.rejectRequest(id); load(); }
     catch { alert("Từ chối thất bại."); }
   }
 
@@ -233,7 +244,7 @@ export function RescueRequestsPage() {
         const uploaded = await uploadApi.uploadImages(completionFiles, "rescue-proof");
         proofImageUrl = uploaded?.joinedUrls || uploaded?.urls?.join("|||") || "";
       }
-      await rescueApi.updateStatus(completionModal.id, "COMPLETED", completionNotes, proofImageUrl);
+      await rescueApi.completeRequest(completionModal.id, completionNotes, proofImageUrl);
       setCompletionModal(null);
       setCompletionNotes("");
       setCompletionFiles([]);
@@ -596,13 +607,13 @@ export function RescueRequestsPage() {
                       )}
                       {isStaff && req.status === "ASSIGNED" && (
                         <>
-                          <button onClick={() => updateStatus(r.requestId, "IN_PROGRESS")} 
+                          <button onClick={() => handleStartRescue(r.requestId)} 
                             className="btn-primary !py-1 !px-2 text-xs border-brand-teal bg-brand-teal">
                             <CheckCircle size={14} /> Tiếp nhận
                           </button>
                           <button onClick={() => {
                             const reason = prompt("Lý do từ chối nhiệm vụ (Hỏng xe, hết xăng...):");
-                            if (reason) updateStatus(r.requestId, "CANCELLED");
+                            if (reason) handleCancelRequest(r.requestId, reason);
                           }} className="btn-secondary !py-1 !px-2 text-xs border-error text-error hover:bg-tint-rose">
                             Từ chối
                           </button>
@@ -628,7 +639,7 @@ export function RescueRequestsPage() {
                         </button>
                       )}
                       {(isStaff || isCitizen) && ["PENDING", "ASSIGNED"].includes(req.status) && (
-                        <button onClick={() => updateStatus(r.requestId, "CANCELLED")} 
+                        <button onClick={() => handleCancelRequest(r.requestId)} 
                           className="btn-secondary !py-1 !px-2 text-xs border-error text-error hover:bg-tint-rose">
                           <XCircle size={14} /> Hủy
                         </button>
